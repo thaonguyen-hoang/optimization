@@ -10,8 +10,8 @@ table at the end.
 
 | File | Owner | Purpose |
 |---|---|---|
-| `data_utils.py` | shared, frozen | loading, cleaning, stratified split, standardization |
-| `make_shared_splits.py` | run once, together | freezes `train.csv`/`val.csv`/`test.csv` to disk |
+| `data_utils.py` | shared, frozen | loading, merging train years, cleaning, continuous-only standardization |
+| `make_shared_splits.py` | run once, together | merges the 3 train-year files + takes the pre-split val/test files, writes frozen `train.csv`/`val.csv`/`test.csv` |
 | `losses.py` | shared, frozen | BCE, weighted BCE, focal, squared hinge (value + gradient) |
 | `optimizers.py` | shared, frozen | GD, SGD, SGD+Momentum, Adam + shared `LR_GRID` |
 | `regularizers.py` | shared, frozen | None, L2, L1 (proximal), Elastic Net |
@@ -24,11 +24,23 @@ table at the end.
 ## Workflow
 
 **Step 0 (group, together, before anyone forks off):**
+
+Split scheme: **train** = first 3 survey years merged into one file; **val**/**test** = the last survey year, already split in half into two separate files (given as-is, not re-split here).
+
 ```bash
-python make_shared_splits.py /path/to/merged_brfss.csv ./shared_splits/
+python make_shared_splits.py \
+    --train_years brfss_year1.csv brfss_year2.csv brfss_year3.csv \
+    --val brfss_lastyear_val.csv \
+    --test brfss_lastyear_test.csv \
+    --out_dir ./shared_splits/
 ```
 This writes `shared_splits/{train,val,test}.csv`, identical for everyone.
 Commit/share this folder — do not regenerate it per-person.
+
+Only **continuous** features (`BMI`, `MentHlth`, `PhysHlth` by default —
+edit `CONTINUOUS_COLS` in `data_utils.py` once, as a group, if your
+schema differs) get standardized; binary 0/1 and ordinal survey-scale
+columns are left on their original scale.
 
 **Step 1 (each person, in parallel):**
 Copy `person_template.py` → e.g. `person1_bce.py`. Edit only the
