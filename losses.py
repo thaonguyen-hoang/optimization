@@ -47,6 +47,10 @@ class BCELoss:
         p = _sigmoid(z)
         return p - y  # classic logistic gradient w.r.t. logits
 
+    def hessian(self, z, y):
+        p = _sigmoid(z)
+        return p * (1 - p)
+
 
 class WeightedBCELoss:
     """Cost-sensitive BCE: scales each example's loss by its class weight.
@@ -73,6 +77,11 @@ class WeightedBCELoss:
         p = _sigmoid(z)
         w = np.where(y == 1, self.w_pos, self.w_neg)
         return w * (p - y)
+
+    def hessian(self, z, y):
+        p = _sigmoid(z)
+        w = np.where(y == 1, self.w_pos, self.w_neg)
+        return w * p * (1 - p)
 
 
 class FocalLoss:
@@ -114,6 +123,9 @@ class FocalLoss:
         term2 = -(1 - p_t) ** self.gamma * (1.0 / p_t) * dpt_dz
         return alpha_t * (term1 + term2)
 
+    def hessian(self, z, y):
+        raise NotImplementedError("Focal loss is non-convex; Hessian is not guaranteed to be positive semi-definite.")
+
 
 class SquaredHingeLoss:
     """Squared hinge, margin form: max(0, 1 - y'*z)^2 where y' in {-1,+1}.
@@ -136,6 +148,11 @@ class SquaredHingeLoss:
         y_pm = self._to_pm1(y)
         margin = np.maximum(0.0, 1 - y_pm * z)
         return -2 * y_pm * margin
+
+    def hessian(self, z, y):
+        y_pm = self._to_pm1(y)
+        margin = np.maximum(0.0, 1 - y_pm * z)
+        return 2.0 * (margin > 0).astype(float)
 
 
 LOSS_REGISTRY = {

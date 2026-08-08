@@ -70,14 +70,17 @@ def plot_confusion_matrix(cc: dict, title="Confusion matrix"):
     return fig
 
 
-def plot_hessian_spectrum(eigvals, title="Hessian eigenvalue spectrum"):
+def plot_hessian_spectrum(eigvals_dict, title="Hessian eigenvalue spectrum"):
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(np.sort(eigvals)[::-1], marker="o", markersize=3)
+    for label, eigvals in eigvals_dict.items():
+        cond = eigvals.max() / max(eigvals.min(), 1e-12)
+        ax.plot(np.sort(eigvals)[::-1], marker="o", markersize=3, 
+                label=f"{label} (cond ≈ {cond:.2e})")
     ax.set_yscale("log")
     ax.set_xlabel("index (sorted)")
     ax.set_ylabel("eigenvalue (log scale)")
-    cond = eigvals.max() / max(eigvals.min(), 1e-12)
-    ax.set_title(f"{title}\ncondition number ≈ {cond:.2e}")
+    ax.set_title(title)
+    ax.legend()
     fig.tight_layout()
     return fig
 

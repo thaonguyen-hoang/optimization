@@ -25,6 +25,7 @@ class NoReg:
     def penalty(self, w): return 0.0
     def grad(self, w): return np.zeros_like(w)
     def prox(self, w, lr): return w
+    def hessian(self, w): return np.zeros_like(w)
 
 
 class L2Reg:
@@ -45,6 +46,9 @@ class L2Reg:
 
     def prox(self, w, lr):
         return w  # no non-smooth part
+
+    def hessian(self, w):
+        return self.lam * np.ones_like(w)
 
 
 class L1Reg:
@@ -69,6 +73,9 @@ class L1Reg:
         thresh = lr * self.lam
         return np.sign(w) * np.maximum(np.abs(w) - thresh, 0.0)
 
+    def hessian(self, w):
+        return np.zeros_like(w)
+
 
 class ElasticNetReg:
     """lambda1 * ||w||_1 + (lambda2/2) * ||w||_2^2. L2 part via grad(),
@@ -90,6 +97,9 @@ class ElasticNetReg:
     def prox(self, w, lr):
         thresh = lr * self.lam_l1
         return np.sign(w) * np.maximum(np.abs(w) - thresh, 0.0)
+
+    def hessian(self, w):
+        return self.lam_l2 * np.ones_like(w)
 
 
 REG_REGISTRY = {

@@ -45,20 +45,52 @@ def train_logreg(X_train, y_train, X_val, y_val,
             batch_idx = perm[start:start + batch_size]
             xb, yb = X_train[batch_idx], y_train[batch_idx]
 
-            z = xb @ w + b
+            w_eval, b_eval = optimizer.lookahead(w, b) if hasattr(optimizer, 'lookahead') else (w, b)
+            z = xb @ w_eval + b_eval
             grad_z = loss_fn.grad(z, yb)  # shape (batch,)
-            grad_w = xb.T @ grad_z / len(batch_idx) + regularizer.grad(w)
+            grad_w = xb.T @ grad_z / len(batch_idx) + regularizer.grad(w_eval)
             grad_b = np.mean(grad_z)
 
-            w, b = optimizer.step(w, b, grad_w, grad_b)
-            w = regularizer.prox(w, optimizer.lr)  # no-op unless L1/elastic-net
+            kwargs = {}
+            if getattr(optimizer, 'requires_hessian', False):
+                try:
+                    diag_H_z = loss_fn.hessian(z, yb)
+                except NotImplementedError as e:
+                    raise NotImplementedError(
+                        f"Optimizer '{getattr(optimizer, 'name', 'newton')}' requires exact Hessian, "
+                        f"but loss '{getattr(loss_fn, 'name', 'loss')}' does not support it."
+                    ) from e
+
+                X_tilde = np.c_[xb, np.ones(len(xb))]
+                H_joint = X_tilde.T @ (diag_H_z[:, None] * X_tilde) / len(batch_idx)
+                if hasattr(regularizer, 'hessian'):
+                    reg_diag = regularizer.hessian(w_eval)
+                    if reg_diag.ndim == 1:
+                        H_joint[:-1, :-1] += np.diag(reg_diag)
+                    else:
+                        H_joint[:-1, :-1] += reg_diag
+                kwargs['hess_joint'] = H_joint
+                
+            if getattr(optimizer, 'requires_obj_fn', False):
+                def obj_fn(w_eval_fn, b_eval_fn):
+                    z_eval = xb @ w_eval_fn + b_eval_fn
+                    return loss_fn.value(z_eval, yb) + regularizer.penalty(w_eval_fn)
+                kwargs['obj_fn'] = obj_fn
+                
+            if getattr(optimizer, 'requires_prox_fn', False):
+                kwargs['prox_fn'] = regularizer.prox
+
+            w, b = optimizer.step(w, b, grad_w, grad_b, **kwargs)
+            
+            if not getattr(optimizer, 'handles_prox', False):
+                w = regularizer.prox(w, getattr(optimizer, 'lr', 1e-2))
 
         # end-of-epoch logging (on full sets, for clean curves)
         z_train_full = X_train @ w + b
         z_val_full = X_val @ w + b
         train_loss = loss_fn.value(z_train_full, y_train) + regularizer.penalty(w)
         val_loss = loss_fn.value(z_val_full, y_val) + regularizer.penalty(w)
-        grad_full = X_train.T @ loss_fn.grad(z_train_full, y_train) / n
+        grad_full = X_train.T @ loss_fn.grad(z_train_full, y_train) / n + regularizer.grad(w)
         grad_norm = float(np.linalg.norm(grad_full))
 
         history["epoch"].append(epoch)
@@ -78,13 +110,13 @@ def predict_logits(X, w, b):
     return X @ w + b
 
 
-def hessian_eigs_logreg(X, w, b, lam_l2: float = 0.0, sample_size: int = None,
+def hessian_eigs_logreg(X, y, w, b, loss_fn, lam_l2: float = 0.0, sample_size: int = None,
                          seed: int = 0):
     """Computes the Hessian eigenvalue spectrum of (unregularized or
     L2-regularized) logistic regression at the current w, for the
     'conditioning' plot referenced in the group discussion.
 
-    H = X^T diag(p(1-p)) X / n + lam_l2 * I
+    H = X^T diag(H_z) X / n + lam_l2 * I
 
     sample_size: optionally subsample rows for speed on large n.
     """
@@ -92,11 +124,12 @@ def hessian_eigs_logreg(X, w, b, lam_l2: float = 0.0, sample_size: int = None,
         rng = np.random.RandomState(seed)
         idx = rng.choice(X.shape[0], sample_size, replace=False)
         X = X[idx]
+        y = y[idx]
 
     z = X @ w + b
-    p = 1.0 / (1.0 + np.exp(-z))
-    weights = p * (1 - p)
-    H = (X * weights[:, None]).T @ X / X.shape[0]
+    
+    diag_H = loss_fn.hessian(z, y)
+    H = (X * diag_H[:, None]).T @ X / X.shape[0]
     H += lam_l2 * np.eye(X.shape[1])
     eigvals = np.linalg.eigvalsh(H)
     return np.sort(eigvals)

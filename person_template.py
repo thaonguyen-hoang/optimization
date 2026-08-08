@@ -8,8 +8,8 @@ below is SHARED — do not edit data_utils.py / losses.py / optimizers.py
 only add to them if the group agrees a new shared piece is needed.
 
 Flow implemented here (matches the group's agreed ablation plan):
-    Stage 1: optimizer ablation (own LR sweep per optimizer) -> opt*
     Stage 2b: loss-specific hyperparameter sweep (weight/alpha/gamma)
+    Stage 1: optimizer ablation (own LR sweep per optimizer) -> opt*
     Stage 3: regularization ablation (own lambda sweep per regularizer) -> reg*
     Final: report best-setup metrics row + supporting plots
 """
@@ -19,7 +19,7 @@ import pandas as pd
 
 from data_utils import get_feature_columns, to_xy, class_counts, TARGET_COL
 from losses import BCELoss, WeightedBCELoss, FocalLoss, SquaredHingeLoss  # noqa
-from optimizers import GD, SGD, SGDMomentum, Adam, LR_GRID
+from optimizers import GD, SGD, SGDMomentum, Adam, Newton, GDBacktracking, LR_GRID
 from regularizers import NoReg, L2Reg, L1Reg, ElasticNetReg
 from train import train_logreg, predict_logits, hessian_eigs_logreg
 from metrics import compute_metrics, logits_to_proba
@@ -31,8 +31,8 @@ from plotting import (plot_convergence, plot_multi_convergence,
 # 0. CONFIG — fill in your name / assigned loss
 # ---------------------------------------------------------------------
 PERSON_NAME = "person1"          # e.g. "person1", "person2", "person3"
-ASSIGNED_LOSS_NAME = "bce"       # one of: "bce", "weighted_bce", "focal", "squared_hinge"
-SHARED_SPLITS_DIR = "./shared_splits"   # output of make_shared_splits.py
+ASSIGNED_LOSS_NAME = "weighted_bce"       # one of: "bce", "weighted_bce", "focal", "squared_hinge"
+SHARED_SPLITS_DIR = "./data/processed"   # output of make_shared_splits.py
 N_EPOCHS = 100
 BATCH_SIZE = 512
 
@@ -76,7 +76,7 @@ def build_loss(name, **kwargs):
 
 # --- fill in candidate hyperparams for YOUR loss, or leave as [{}] for BCE/hinge ---
 loss_hparam_candidates = [
-    {},  # e.g. {"w_pos": 2.0, "w_neg": 1.0} for weighted_bce
+    {"w_pos": 2.0, "w_neg": 1.0},  # e.g. {"w_pos": 2.0, "w_neg": 1.0} for weighted_bce
 ]
 
 best_loss_hparams = None
@@ -92,7 +92,7 @@ for hp in loss_hparam_candidates:
         regularizer=NoReg(),
         n_epochs=30, batch_size=BATCH_SIZE, verbose_every=0,
     )
-    p_val = logits_to_proba(predict_logits(X_val, result["w"], result["b"]), ASSIGNED_LOSS_NAME)
+    p_val = logits_to_proba(predict_logits(X_val, result["w"], result["b"]))
     m = compute_metrics(y_val, p_val)
     loss_sweep_log.append({**hp, "auprc": m["auprc"], "f1_minority": m["f1_minority"]})
     if m["auprc"] > best_loss_score:
@@ -110,9 +110,17 @@ loss_fn = build_loss(ASSIGNED_LOSS_NAME, **best_loss_hparams)
 optimizer_candidates = {
     "gd": lambda lr: GD(lr=lr),
     "sgd": lambda lr: SGD(lr=lr),
-    "sgd_momentum": lambda lr: SGDMomentum(lr=lr, momentum=0.9),
+    "sgd_momentum": lambda lr: SGDMomentum(lr=lr, momentum=0.9, nesterov=True),
     "adam": lambda lr: Adam(lr=lr),
+    "gd_backtracking": lambda lr: GDBacktracking(init_lr=1.0),
 }
+# Newton requires exact Hessian (supported by BCE, Weighted BCE, Squared Hinge)
+if ASSIGNED_LOSS_NAME != "focal":
+    optimizer_candidates["newton"] = lambda lr: Newton(lr=1.0)
+
+def get_batch_size(opt_name):
+    # Full batch for GD and Newton/backtracking, mini-batch for others
+    return len(X_train) if opt_name in ["gd", "newton", "gd_backtracking"] else BATCH_SIZE
 
 opt_stage_histories = {}      # best-lr history per optimizer, for the overlay plot
 opt_lr_sweep_results = {}     # per-optimizer {lr -> final val loss}, for the LR-sensitivity plot
@@ -122,16 +130,17 @@ for opt_name, opt_factory in optimizer_candidates.items():
     lr_to_val = {}
     best_for_this_opt = (None, -np.inf, None)  # (lr, auprc, history)
 
-    for lr in LR_GRID:
+    grid = LR_GRID if opt_name not in ["gd_backtracking", "newton"] else [1.0]
+    for lr in grid:
         optimizer = opt_factory(lr)
         result = train_logreg(
             X_train, y_train, X_val, y_val,
             loss_fn=loss_fn, optimizer=optimizer, regularizer=NoReg(),
-            n_epochs=N_EPOCHS, batch_size=BATCH_SIZE, verbose_every=0,
+            n_epochs=N_EPOCHS, batch_size=get_batch_size(opt_name), verbose_every=0,
         )
         lr_to_val[lr] = result["history"]["val_loss"][-1]
 
-        p_val = logits_to_proba(predict_logits(X_val, result["w"], result["b"]), ASSIGNED_LOSS_NAME)
+        p_val = logits_to_proba(predict_logits(X_val, result["w"], result["b"]))
         m = compute_metrics(y_val, p_val)
         if m["auprc"] > best_for_this_opt[1]:
             best_for_this_opt = (lr, m["auprc"], result["history"])
@@ -150,7 +159,12 @@ print(f"\n>>> Best optimizer for {ASSIGNED_LOSS_NAME}: {best_opt_name} (lr={best
 # Figures for the optimizer stage:
 fig_opt_compare = plot_multi_convergence(opt_stage_histories, x_axis="wall_time",
                                           title=f"Optimizer comparison ({ASSIGNED_LOSS_NAME})")
-# fig_opt_compare.savefig(f"{PERSON_NAME}_stage1_optimizer_comparison.png", dpi=150)
+fig_opt_compare.savefig(f"{PERSON_NAME}_stage1_optimizer_comparison.png", dpi=150)
+
+for opt_name, lr_dict in opt_lr_sweep_results.items():
+    if len(lr_dict) > 1: # Only plot sensitivity if we actually swept over LRs
+        fig_lr = plot_lr_sensitivity(lr_dict, title=f"LR sensitivity ({opt_name})")
+        fig_lr.savefig(f"{PERSON_NAME}_stage1_lr_sensitivity_{opt_name}.png", dpi=150)
 
 best_optimizer_factory = optimizer_candidates[best_opt_name]
 
@@ -175,9 +189,9 @@ for reg_name, reg_factory in reg_candidates.items():
         result = train_logreg(
             X_train, y_train, X_val, y_val,
             loss_fn=loss_fn, optimizer=optimizer, regularizer=reg_factory(lam),
-            n_epochs=N_EPOCHS, batch_size=BATCH_SIZE, verbose_every=0,
+            n_epochs=N_EPOCHS, batch_size=get_batch_size(best_opt_name), verbose_every=0,
         )
-        p_val = logits_to_proba(predict_logits(X_val, result["w"], result["b"]), ASSIGNED_LOSS_NAME)
+        p_val = logits_to_proba(predict_logits(X_val, result["w"], result["b"]))
         m = compute_metrics(y_val, p_val)
         if m["auprc"] > best_reg_score:
             best_reg_score = m["auprc"]
@@ -194,11 +208,11 @@ final_regularizer = reg_candidates[best_reg_name](best_reg_lam)
 final_result = train_logreg(
     X_train, y_train, X_val, y_val,
     loss_fn=loss_fn, optimizer=final_optimizer, regularizer=final_regularizer,
-    n_epochs=N_EPOCHS, batch_size=BATCH_SIZE, verbose_every=10,
+    n_epochs=N_EPOCHS, batch_size=get_batch_size(best_opt_name), verbose_every=10,
 )
 
 z_test = predict_logits(X_test, final_result["w"], final_result["b"])
-p_test = logits_to_proba(z_test, ASSIGNED_LOSS_NAME)
+p_test = logits_to_proba(z_test)
 final_metrics = compute_metrics(y_test, p_test)
 
 print(f"\n=== FINAL SETUP: {PERSON_NAME} / {ASSIGNED_LOSS_NAME} ===")
@@ -230,15 +244,20 @@ fig_confusion = plot_confusion_matrix(
     title=f"{PERSON_NAME} test confusion matrix")
 
 # Hessian conditioning story (most meaningful for L2 vs none)
-eigvals_noreg = hessian_eigs_logreg(X_train, final_result["w"], final_result["b"],
-                                     lam_l2=0.0, sample_size=20000)
-eigvals_l2 = hessian_eigs_logreg(X_train, final_result["w"], final_result["b"],
-                                  lam_l2=best_reg_lam if best_reg_name == "l2" else 0.1,
-                                  sample_size=20000)
-fig_hessian = plot_hessian_spectrum(eigvals_l2, title=f"{PERSON_NAME} Hessian spectrum (with L2)")
+try:
+    eigvals_noreg = hessian_eigs_logreg(X_train, y_train, final_result["w"], final_result["b"], loss_fn, lam_l2=0.0)
+    eigvals_l2 = hessian_eigs_logreg(X_train, y_train, final_result["w"], final_result["b"], loss_fn, 
+                                     lam_l2=best_reg_lam if best_reg_name == "l2" else 0.1)
 
-# fig_final_convergence.savefig(f"{PERSON_NAME}_final_convergence.png", dpi=150)
-# fig_confusion.savefig(f"{PERSON_NAME}_confusion.png", dpi=150)
-# fig_hessian.savefig(f"{PERSON_NAME}_hessian.png", dpi=150)
+    fig_hessian = plot_hessian_spectrum(
+        {"No L2": eigvals_noreg, f"L2 (λ={best_reg_lam if best_reg_name == 'l2' else 0.1})": eigvals_l2}, 
+        title=f"{PERSON_NAME} Hessian conditioning"
+    )
+    fig_hessian.savefig(f"{PERSON_NAME}_hessian.png", dpi=150)
+except NotImplementedError:
+    print("Skipping Hessian plot: loss function does not support exact Hessian.")
+
+fig_final_convergence.savefig(f"{PERSON_NAME}_final_convergence.png", dpi=150)
+fig_confusion.savefig(f"{PERSON_NAME}_confusion.png", dpi=150)
 
 print(f"\nDone. Bring {PERSON_NAME}_final_row.csv to the group merge step.")

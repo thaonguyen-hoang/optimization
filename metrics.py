@@ -22,7 +22,7 @@ def _sigmoid(z):
     return out
 
 
-def logits_to_proba(z, loss_name: str):
+def logits_to_proba(z, loss_name: str = None):
     """squared_hinge scores aren't probabilities; sigmoid them anyway
     for a comparable ranking-based score, but note this caveat in your
     write-up if you used squared hinge.
@@ -47,15 +47,24 @@ def precision_recall_f1(tp, fp, fn):
 
 
 def auroc(y_true, p_pred):
-    """Rank-based AUROC via Mann-Whitney U, no sklearn dependency."""
-    order = np.argsort(p_pred)
-    ranks = np.empty_like(order, dtype=np.float64)
-    ranks[order] = np.arange(1, len(p_pred) + 1)
+    """Rank-based AUROC via Mann-Whitney U with midrank tie handling, no sklearn dependency."""
+    y_true = np.asarray(y_true)
+    p_pred = np.asarray(p_pred)
     n_pos = np.sum(y_true == 1)
     n_neg = np.sum(y_true == 0)
     if n_pos == 0 or n_neg == 0:
         return float("nan")
-    sum_ranks_pos = np.sum(ranks[y_true == 1])
+
+    order = np.argsort(p_pred)
+    p_sorted = p_pred[order]
+    unique_vals, idx, counts = np.unique(p_sorted, return_inverse=True, return_counts=True)
+    midranks = np.cumsum(counts) - (counts - 1) / 2.0
+    ranks = midranks[idx]
+
+    orig_ranks = np.empty_like(ranks)
+    orig_ranks[order] = ranks
+
+    sum_ranks_pos = np.sum(orig_ranks[y_true == 1])
     auc = (sum_ranks_pos - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
     return float(auc)
 
