@@ -20,7 +20,10 @@ import numpy as np
 def train_logreg(X_train, y_train, X_val, y_val,
                   loss_fn, optimizer, regularizer,
                   n_epochs: int = 100, batch_size: int = 256,
-                  seed: int = 0, verbose_every: int = 10):
+                  seed: int = 0, verbose_every: int = 10,
+                  tol_grad: float = None,
+                  tol_obj: float = None,
+                  early_stopping_patience: int = None):
     """Trains z = Xw + b via mini-batch iterations using the given
     loss/optimizer/regularizer. Set batch_size = len(X_train) to get
     full-batch GD behavior for the same code path.
@@ -38,6 +41,8 @@ def train_logreg(X_train, y_train, X_val, y_val,
         "grad_norm": [], "wall_time": [],
     }
     t0 = time.time()
+    best_val_loss = float("inf")
+    epochs_without_improvement = 0
 
     for epoch in range(n_epochs):
         perm = rng.permutation(n)
@@ -102,6 +107,33 @@ def train_logreg(X_train, y_train, X_val, y_val,
         if verbose_every and epoch % verbose_every == 0:
             print(f"epoch {epoch:4d}  train_loss={train_loss:.4f}  "
                   f"val_loss={val_loss:.4f}  grad_norm={grad_norm:.4f}")
+
+        # --- Dynamic Stopping Criteria ---
+        # 1. Gradient Norm Stopping
+        if tol_grad is not None and grad_norm < tol_grad:
+            if verbose_every:
+                print(f"--> Stopping early at epoch {epoch}: grad_norm ({grad_norm:.6f}) < tol_grad ({tol_grad})")
+            break
+
+        # 2. Objective Delta Stopping
+        if tol_obj is not None and len(history["train_loss"]) > 1:
+            delta_obj = abs(history["train_loss"][-2] - train_loss)
+            if delta_obj < tol_obj:
+                if verbose_every:
+                    print(f"--> Stopping early at epoch {epoch}: objective delta ({delta_obj:.6f}) < tol_obj ({tol_obj})")
+                break
+
+        # 3. Validation Early Stopping (Patience)
+        if early_stopping_patience is not None:
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+                if epochs_without_improvement >= early_stopping_patience:
+                    if verbose_every:
+                        print(f"--> Early stopping at epoch {epoch}: val_loss has not improved for {early_stopping_patience} epochs.")
+                    break
 
     return {"w": w, "b": b, "history": history}
 

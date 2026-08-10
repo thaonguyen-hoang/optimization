@@ -25,9 +25,7 @@ from train import train_logreg, predict_logits, hessian_eigs_logreg
 from metrics import compute_metrics, logits_to_proba
 from plotting import (plot_convergence, plot_multi_convergence,
                        plot_confusion_matrix, plot_hessian_spectrum,
-                       plot_lr_sensitivity)
-
-# ---------------------------------------------------------------------
+                       plot_lr_sensitivity)# ---------------------------------------------------------------------
 # 0. CONFIG — fill in your name / assigned loss
 # ---------------------------------------------------------------------
 PERSON_NAME = "person1"          # e.g. "person1", "person2", "person3"
@@ -36,6 +34,10 @@ SHARED_SPLITS_DIR = "./data/processed"   # output of make_shared_splits.py
 N_EPOCHS = 100
 BATCH_SIZE = 512
 
+# Stage 1 Stopping Criterion Configuration:
+# Choose "grad_norm" for theoretical gradient flatness (||\nabla L|| < 1e-3)
+# Choose "obj_delta" for objective function flattening (|L_t - L_{t-1}| < 1e-5)
+STAGE1_STOPPING_CRITERION = "grad_norm"   # Options: "grad_norm" or "obj_delta"
 # ---------------------------------------------------------------------
 # 1. LOAD SHARED, FROZEN SPLITS (identical for everyone)
 # ---------------------------------------------------------------------
@@ -122,6 +124,12 @@ def get_batch_size(opt_name):
     # Full batch for GD and Newton/backtracking, mini-batch for others
     return len(X_train) if opt_name in ["gd", "newton", "gd_backtracking"] else BATCH_SIZE
 
+stage1_stop_kwargs = {}
+if STAGE1_STOPPING_CRITERION == "grad_norm":
+    stage1_stop_kwargs["tol_grad"] = 1e-3
+elif STAGE1_STOPPING_CRITERION == "obj_delta":
+    stage1_stop_kwargs["tol_obj"] = 1e-5
+
 opt_stage_histories = {}      # best-lr history per optimizer, for the overlay plot
 opt_lr_sweep_results = {}     # per-optimizer {lr -> final val loss}, for the LR-sensitivity plot
 best_opt_name, best_opt_lr, best_opt_score = None, None, -np.inf
@@ -137,6 +145,7 @@ for opt_name, opt_factory in optimizer_candidates.items():
             X_train, y_train, X_val, y_val,
             loss_fn=loss_fn, optimizer=optimizer, regularizer=NoReg(),
             n_epochs=N_EPOCHS, batch_size=get_batch_size(opt_name), verbose_every=0,
+            **stage1_stop_kwargs,
         )
         lr_to_val[lr] = result["history"]["val_loss"][-1]
 
@@ -190,6 +199,7 @@ for reg_name, reg_factory in reg_candidates.items():
             X_train, y_train, X_val, y_val,
             loss_fn=loss_fn, optimizer=optimizer, regularizer=reg_factory(lam),
             n_epochs=N_EPOCHS, batch_size=get_batch_size(best_opt_name), verbose_every=0,
+            tol_obj=1e-5, early_stopping_patience=10,
         )
         p_val = logits_to_proba(predict_logits(X_val, result["w"], result["b"]))
         m = compute_metrics(y_val, p_val)
@@ -209,6 +219,7 @@ final_result = train_logreg(
     X_train, y_train, X_val, y_val,
     loss_fn=loss_fn, optimizer=final_optimizer, regularizer=final_regularizer,
     n_epochs=N_EPOCHS, batch_size=get_batch_size(best_opt_name), verbose_every=10,
+    early_stopping_patience=10,
 )
 
 z_test = predict_logits(X_test, final_result["w"], final_result["b"])
