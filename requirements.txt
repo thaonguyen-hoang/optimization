@@ -1,0 +1,8 @@
+# Core scientific stack (logistic regression optimization project)
+# Versions reflect conda env `optim` (Python 3.12.13).
+# Install into env:  conda activate optim && pip install -r requirements.txt
+# NOTE: matplotlib is NOT yet installed in `optim` but is required by plotting.py / person_template.py.
+
+numpy>=2.5,<3
+pandas>=3.0,<4
+matplotlib>=3.9

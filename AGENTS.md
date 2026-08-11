@@ -1,0 +1,2 @@
+Response rules:
+1. When using math formulas, never use single dollar signs $ ... $ for inline math. Always wrap math equations in separate, fenced block-level double dollar signs $$ ... $$ so the renderer can display them

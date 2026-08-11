@@ -144,3 +144,23 @@ LOSS_REGISTRY = {
     "focal": FocalLoss,
     "squared_hinge": SquaredHingeLoss,
 }
+
+
+def build_loss(name: str, **kwargs):
+    """Factory for loss functions by registry name.
+
+    Only the convex-smooth losses (bce, weighted_bce, squared_hinge) are
+    used in the current tuning plan; focal is kept for future extension.
+    """
+    name = name.lower()
+    if name == "bce":
+        return BCELoss()
+    if name == "weighted_bce":
+        return WeightedBCELoss(w_pos=kwargs.get("w_pos", 1.0),
+                               w_neg=kwargs.get("w_neg", 1.0))
+    if name == "focal":
+        return FocalLoss(alpha=kwargs.get("alpha", 0.25),
+                         gamma=kwargs.get("gamma", 2.0))
+    if name == "squared_hinge":
+        return SquaredHingeLoss()
+    raise ValueError(f"Unknown loss: {name}")

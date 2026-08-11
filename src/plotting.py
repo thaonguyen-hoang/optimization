@@ -82,6 +82,61 @@ def plot_hessian_spectrum(eigvals, title="Hessian eigenvalue spectrum"):
     return fig
 
 
+def plot_metrics(history, title="Validation metrics"):
+    """Plot val AUPRC / F1-minority / accuracy across epochs.
+
+    Uses epoch-level points (where val_* are non-NaN). Returns a Figure
+    with three metric curves so they can be tracked without re-running.
+    """
+    hist = {k: np.asarray(v) for k, v in history.items()}
+    mask = ~np.isnan(hist["val_auprc"])
+    epochs = hist["epoch"][mask]
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.plot(epochs, hist["val_auprc"][mask], label="AUPRC", marker="o", ms=3)
+    ax.plot(epochs, hist["val_f1_minority"][mask], label="F1-minority", marker="s", ms=3)
+    ax.plot(epochs, hist["val_accuracy"][mask], label="accuracy", marker="^", ms=3)
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("score")
+    ax.set_title(title)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def plot_convergence_full(history, title="Convergence", x_axis="epoch"):
+    """Three-panel convergence: loss, gradient norm, val metrics.
+
+    x_axis: 'epoch' or 'wall_time'. Loss/grad use iter-level (subsampled)
+    points; metrics use epoch-level points.
+    """
+    hist = {k: np.asarray(v) for k, v in history.items()}
+    x_loss = hist[x_axis]
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+    axes[0].plot(x_loss, hist["train_loss"], label="train", alpha=0.8)
+    axes[0].plot(x_loss, hist["val_loss"], label="val", alpha=0.8)
+    axes[0].set_xlabel(x_axis); axes[0].set_ylabel("loss")
+    axes[0].set_title(f"{title} — loss"); axes[0].legend()
+
+    gmask = ~np.isnan(hist["grad_norm"])
+    axes[1].plot(x_loss[gmask], hist["grad_norm"][gmask], color="tab:red")
+    axes[1].set_yscale("log")
+    axes[1].set_xlabel(x_axis); axes[1].set_ylabel("||grad||")
+    axes[1].set_title(f"{title} — gradient norm")
+
+    mmask = ~np.isnan(hist["val_auprc"])
+    xe = hist[x_axis][mmask]
+    axes[2].plot(xe, hist["val_auprc"][mmask], label="AUPRC", marker="o", ms=3)
+    axes[2].plot(xe, hist["val_f1_minority"][mmask], label="F1-min.", marker="s", ms=3)
+    axes[2].plot(xe, hist["val_accuracy"][mmask], label="acc", marker="^", ms=3)
+    axes[2].set_xlabel(x_axis); axes[2].set_ylabel("score")
+    axes[2].set_title(f"{title} — val metrics"); axes[2].legend()
+
+    fig.tight_layout()
+    return fig
+
+
 def plot_lr_sensitivity(lr_to_final_loss: dict, title="LR sensitivity"):
     """lr_to_final_loss: {lr_value -> final val_loss}. One line per
     optimizer if you overlay several dicts -- otherwise call once per

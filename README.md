@@ -1,81 +1,137 @@
-# Diabetes BRFSS — Loss/Optimizer/Regularizer Ablation Scaffold
+# Diabetes BRFSS — Optimization for Logistic Regression
 
-Shared codebase for the 3-person split: each person owns one loss
-function end-to-end (optimizer tuning → regularizer tuning → final
-test-set evaluation), using identical data, splits, model, optimizer
-set, and metrics — so the three results merge into one fair comparison
-table at the end.
+Optimization course project: train **logistic regression** `z = Xw + b`
+to classify diabetes (BRFSS, imbalanced ~14% positive) and study how
+different **optimizers**, **losses**, and **regularizers** behave. Everything
+is implemented from scratch with NumPy (no sklearn / scipy).
 
-## File map
+## Repository layout
 
-| File | Owner | Purpose |
-|---|---|---|
-| `data_utils.py` | shared, frozen | loading, cleaning, stratified split, standardization |
-| `make_shared_splits.py` | run once, together | freezes `train.csv`/`val.csv`/`test.csv` to disk |
-| `losses.py` | shared, frozen | BCE, weighted BCE, focal, squared hinge (value + gradient) |
-| `optimizers.py` | shared, frozen | GD, SGD, SGD+Momentum, Adam + shared `LR_GRID` |
-| `regularizers.py` | shared, frozen | None, L2, L1 (proximal), Elastic Net |
-| `train.py` | shared, frozen | training loop wiring loss+optimizer+regularizer together; Hessian eigenvalue helper |
-| `metrics.py` | shared, frozen | accuracy/precision/recall/F1/AUROC/AUPRC, no sklearn dependency |
-| `plotting.py` | shared, frozen | convergence curves, multi-run overlays, confusion matrix, Hessian spectrum, LR-sensitivity |
-| `person_template.py` | **copy per person** | the actual ablation pipeline (Stage 1 → 2b → 3 → final) |
-| `merge_results.py` | run once, together, at the end | combines the 3 `*_final_row.csv` into `final_comparison_table.csv` |
+```
+optimization/
+├── data/                 # 3 BRFSS CSVs (gitignored — large)
+│   ├── diabetes_binary_health_indicators_BRFSS2015.csv   # train
+│   ├── diabetes_2021_val.csv                             # val
+│   └── diabetes_2021_test.csv                            # test
+├── src/                  # shared library
+│   ├── data_utils.py     # load 3 splits, standardize (fit on train only)
+│   ├── losses.py         # BCE, WeightedBCE, SquaredHinge (+Focal, unused)
+│   ├── optimizers.py     # GD, SGD, AcceleratedGD, Newton, L-BFGS + backtracking
+│   ├── regularizers.py   # None, L2 (gradient), L1 (subgradient, NOT prox)
+│   ├── metrics.py        # AUPRC, F1-minority, accuracy, AUROC (pure numpy)
+│   ├── train.py          # generic training loop, per-iter logging, checkpoint
+│   └── plotting.py       # convergence + metrics + Hessian-spectrum figures
+├── scripts/
+│   ├── train.py          # CLI: one run -> runs/<id>/{config,history,checkpoint,metrics}
+│   └── tune.py           # CLI: full grid search for one loss -> summary + best
+├── runs/                 # run artifacts (gitignored)
+├── figures/              # generated figures (gitignored)
+├── run_train.sh          # example single run
+├── run_tune.sh           # tuning for all 3 losses + merge best configs
+├── requirements.txt
+└── README.md
+```
+
+## Setup
+
+```bash
+conda activate optim
+pip install -r requirements.txt   # numpy, pandas, matplotlib
+```
+
+The three CSVs live under `data/` (gitignored). They are loaded directly —
+there is no re-splitting step.
+
+## Data note
+
+The split is fixed by the files on disk:
+
+- **train** = BRFSS 2015 (`diabetes_binary_health_indicators_BRFSS2015.csv`, ~229k rows after dedup)
+- **val / test** = BRFSS 2021 (`diabetes_2021_val.csv`, `diabetes_2021_test.csv`)
+
+Train (2015) does not overlap val/test (2021) — the year split prevents
+leakage. Val and test are different row sets but share ~6.5k duplicate rows
+(~5.5%); this is noted but not re-split, per the project decision.
+Standardization (mean/std) is fit on **train only**.
 
 ## Workflow
 
-**Step 0 (group, together, before anyone forks off):**
+### 1. Single run
+
 ```bash
-python make_shared_splits.py /path/to/merged_brfss.csv ./shared_splits/
+python -m scripts.train --loss bce --reg l2 --lam 1e-2 \
+  --optimizer newton --backtracking --epochs 50 --eval-test --save-figures
 ```
-This writes `shared_splits/{train,val,test}.csv`, identical for everyone.
-Commit/share this folder — do not regenerate it per-person.
 
-**Step 1 (each person, in parallel):**
-Copy `person_template.py` → e.g. `person1_bce.py`. Edit only the
-`CONFIG` section at the top (`PERSON_NAME`, `ASSIGNED_LOSS_NAME`) and,
-if your loss has extra hyperparameters (weighted BCE's class weights,
-focal's alpha/gamma), fill in `loss_hparam_candidates`. Run it. It
-walks:
+Or via the helper script:
 
-1. loss hyperparameter pre-sweep (skip if plain BCE/hinge)
-2. optimizer ablation with its own LR sweep per optimizer → picks `opt*`
-3. regularizer ablation with its own λ sweep per regularizer → picks `reg*`
-4. final held-out test evaluation with the fully tuned setup
-5. writes `{person}_final_row.csv` + convergence/confusion/Hessian figures
-
-**Step 2 (group, together, at the end):**
 ```bash
-python merge_results.py person1_final_row.csv person2_final_row.csv person3_final_row.csv
+./run_train.sh
 ```
-Produces `final_comparison_table.csv` — this is the "best setup"
-table for your report.
 
-## Suggested loss assignment
+Outputs land in `runs/<run_id>/`:
 
-- **Person 1 — BCE**: baseline, convex, smooth.
-- **Person 2 — Weighted BCE**: convex, smooth, cost-sensitive framing (tune the class-weight ratio in the pre-sweep).
-- **Person 3 — Focal loss** (non-convex contrast) *or* **Squared hinge** (stays fully convex) — pick based on whether your course wants the convex-vs-non-convex story or a fully-convex comparison.
+| File | Contents |
+|---|---|
+| `config.json` | full hyperparameters |
+| `history.npz` | per-iter train loss / grad norm / wall time + per-epoch val loss & metrics (AUPRC, F1, accuracy, AUROC) |
+| `checkpoints/best.npz` | `(w, b)` at best val AUPRC |
+| `checkpoints/last.npz` | `(w, b)` at the final epoch |
+| `metrics.json` | best val metrics (+ test metrics if `--eval-test`) |
+| `best.json` | pointer to best checkpoint + epoch |
+| `convergence.png` | loss / grad-norm / val-metrics panels (if `--save-figures`) |
+| `hessian_eigs.npy` | Hessian spectrum (if `--hessian-spectrum`) |
 
-## Rules to keep the comparison fair
+### 2. Hyperparameter tuning
 
-1. Never re-run `split_data` yourself — always load from `shared_splits/`.
-2. Never hand-pick a shared learning rate across optimizers — always sweep `LR_GRID` per optimizer and take each optimizer's own best.
-3. Same rule for regularizer λ.
-4. Compare across losses using **task metrics** (AUPRC, F1-minority), not raw loss values — they aren't on the same scale across different loss functions.
-5. If you touch a "shared, frozen" file because you found a real bug, tell the group immediately — everyone's already-run numbers may need a re-run.
+```bash
+./run_tune.sh                # tunes bce, weighted_bce, squared_hinge
+```
 
-## Notes on the implementation
+or a single loss:
 
-- Losses/optimizers/regularizers work on **logits** `z = Xw + b`, not
-  probabilities, for numerical stability — see the docstring at the
-  top of `losses.py`.
-- All loss gradients were verified against numerical differentiation
-  during scaffold testing.
-- `train.py::hessian_eigs_logreg` gives you the eigenvalue spectrum of
-  the (optionally L2-regularized) Hessian at a given `w` — use this
-  for the "L2 improves conditioning" plot from your report discussion.
-- L1's non-smoothness is handled via **proximal gradient (ISTA)**, not
-  plain subgradient descent — see `regularizers.py::L1Reg.prox`.
-- `optimizers.LR_GRID` and the λ grid in `person_template.py` are
-  deliberately small for a first pass; widen them if you have compute
-  budget left, but keep the same grid across all three people.
+```bash
+python -m scripts.tune --loss bce --tune-epochs 30
+```
+
+`tune.py` does:
+
+1. **Stage A** — loss-hparam pre-sweep (only `weighted_bce`: `w_pos ∈ {1,2,4,6,10}`).
+2. **Stage B** — full grid over the three objectives × eligible optimizers × step sizes × `λ`:
+
+   - **Smooth (none, L2):** GD, SGD, AcceleratedGD, Newton, L-BFGS with
+     fixed `lr ∈ [1e-4, 1e-3, 1e-2, 1e-1, 1.0]`, **and** the backtracking
+     variants (Armijo, `α₀=1, c=1e-4, ρ=0.5` fixed).
+   - **Non-smooth (L1):** GD, SGD, AcceleratedGD with a **subgradient** and
+     fixed `lr` only. No backtracking, no second-order.
+
+Selection criterion = **validation AUPRC** (imbalanced, minority-focused).
+F1-minority and accuracy are logged for monitoring but not used to pick.
+
+Outputs: `runs/tune_<loss>_summary.csv` (every trial) and
+`runs/best_<loss>.json` (best config). `run_tune.sh` also merges the three
+best configs into `runs/final_comparison_table.csv`.
+
+## Math summary
+
+- **Objective:** `F(w) = f(w) + r(w)`, with `f` = data loss on logits,
+  `r` = regularizer.
+- **Losses (convex, smooth):** BCE, Weighted BCE, Squared Hinge.
+- **Regularizers:** L2 smooth gradient; **L1 via subgradient**
+  (`sign(w)`, `0` at the kink) — proximal/ISTA is deliberately NOT used
+  (course scope).
+- **Optimizers:**
+  - Fixed step size: GD, SGD (mini-batch), Accelerated GD, Newton (damped),
+    L-BFGS (damped) — `lr` tuned.
+  - Backtracking (Armijo): GD, Accelerated GD, Newton, L-BFGS — `α₀,c,ρ`
+    fixed; smooth objectives only.
+  - SGD never backtracks (stochastic objective).
+  - Newton / L-BFGS never combined with L1 (non-smooth Hessian).
+
+## Reproducibility / fairness
+
+- Data splits are fixed files; no per-run re-splitting.
+- Standardization fits on train only.
+- Same optimizer/loss/regularizer classes and same grids for every loss.
+- Best model chosen by val AUPRC; test is evaluated only with the final
+  best config (`--eval-test`), never used for selection.
