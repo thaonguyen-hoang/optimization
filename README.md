@@ -16,8 +16,8 @@ optimization/
 ├── src/                  # shared library
 │   ├── data_utils.py     # load 3 splits, standardize (fit on train only)
 │   ├── losses.py         # BCE, WeightedBCE, SquaredHinge (+Focal, unused)
-│   ├── optimizers.py     # GD, SGD, AcceleratedGD, Newton, L-BFGS + backtracking
-│   ├── regularizers.py   # None, L2 (gradient), L1 (subgradient, NOT prox)
+│   ├── optimizers.py     # GD, NAG, Newton, SGD + Backtracking & Proximal logic
+│   ├── regularizers.py   # None, L2 (gradient), L1 (proximal operator)
 │   ├── metrics.py        # AUPRC, F1-minority, accuracy, AUROC (pure numpy)
 │   ├── train.py          # generic training loop, per-iter logging, checkpoint
 │   └── plotting.py       # convergence + metrics + Hessian-spectrum figures
@@ -99,11 +99,11 @@ python -m scripts.tune --loss bce --tune-epochs 30
 1. **Stage A** — loss-hparam pre-sweep (only `weighted_bce`: `w_pos ∈ {1,2,4,6,10}`).
 2. **Stage B** — full grid over the three objectives × eligible optimizers × step sizes × `λ`:
 
-   - **Smooth (none, L2):** GD, SGD, AcceleratedGD, Newton, L-BFGS with
+- **Smooth (none, L2):** GD, SGD, NAG, Newton with
      fixed `lr ∈ [1e-4, 1e-3, 1e-2, 1e-1, 1.0]`, **and** the backtracking
-     variants (Armijo, `α₀=1, c=1e-4, ρ=0.5` fixed).
-   - **Non-smooth (L1):** GD, SGD, AcceleratedGD with a **subgradient** and
-     fixed `lr` only. No backtracking, no second-order.
+     variants (Armijo for GD/Newton, Parabol for NAG; `α₀=1, c=1e-4, ρ=0.5`).
+   - **Non-smooth (L1):** GD (ISTA), NAG (FISTA), SGD (Proximal) with both
+     fixed `lr` and **Proximal Backtracking** (Parabol Majorization on smooth part).
 
 Selection criterion = **validation AUPRC** (imbalanced, minority-focused).
 F1-minority and accuracy are logged for monitoring but not used to pick.
@@ -117,16 +117,12 @@ best configs into `runs/final_comparison_table.csv`.
 - **Objective:** `F(w) = f(w) + r(w)`, with `f` = data loss on logits,
   `r` = regularizer.
 - **Losses (convex, smooth):** BCE, Weighted BCE, Squared Hinge.
-- **Regularizers:** L2 smooth gradient; **L1 via subgradient**
-  (`sign(w)`, `0` at the kink) — proximal/ISTA is deliberately NOT used
-  (course scope).
+- **Regularizers:** L2 smooth gradient; **L1 via Proximal Operator** (Soft-Thresholding). Subgradient method is deliberately NOT used in favor of ISTA/FISTA.
 - **Optimizers:**
-  - Fixed step size: GD, SGD (mini-batch), Accelerated GD, Newton (damped),
-    L-BFGS (damped) — `lr` tuned.
-  - Backtracking (Armijo): GD, Accelerated GD, Newton, L-BFGS — `α₀,c,ρ`
-    fixed; smooth objectives only.
-  - SGD never backtracks (stochastic objective).
-  - Newton / L-BFGS never combined with L1 (non-smooth Hessian).
+  - Fixed step size: GD, SGD (mini-batch), NAG (Nesterov Accelerated Gradient), Newton (damped) — `lr` tuned.
+  - Backtracking: GD (Armijo), NAG (Parabol), Newton (Armijo), ISTA/FISTA (Proximal Backtracking with energy-preserving $s_k$).
+  - SGD features Diminishing step size schedules ($1/\sqrt{k}$).
+  - Newton is never combined with L1 (non-smooth Hessian math invalidity).
 
 ## Reproducibility / fairness
 

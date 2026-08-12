@@ -53,7 +53,6 @@ def parse_args():
     p.add_argument("--backtracking", action="store_true",
                    help="use backtracking line search (Armijo/Parabol) for gd/nag/newton")
     p.add_argument("--alpha0", type=float, default=1.0, help="backtracking initial step")
-    p.add_argument("--momentum", type=float, default=0.9, help="accelerated GD momentum")
     p.add_argument("--w-pos", type=float, default=1.0, help="weighted BCE positive weight")
     p.add_argument("--w-neg", type=float, default=1.0, help="weighted BCE negative weight")
     p.add_argument("--epochs", type=int, default=50)
@@ -86,7 +85,6 @@ def build_config(args):
         "optimizer": args.optimizer, "lr": args.lr,
         "lr_schedule": args.lr_schedule,
         "backtracking": args.backtracking, "alpha0": args.alpha0,
-        "momentum": args.momentum,
         "w_pos": args.w_pos, "w_neg": args.w_neg,
         "epochs": args.epochs, "batch_size": args.batch_size,
         "seed": args.seed, "log_every_iters": args.log_every_iters,
@@ -105,7 +103,7 @@ def main():
         opt_name, lr=args.lr,
         backtracking=args.backtracking,
         schedule=args.lr_schedule,
-        alpha0=args.alpha0, momentum=args.momentum,
+        alpha0=args.alpha0,
     )
 
     # enforce full-batch for second-order / backtracking first-order methods

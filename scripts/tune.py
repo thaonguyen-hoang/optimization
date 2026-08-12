@@ -65,14 +65,14 @@ def _run_trial(X_train, y_train, X_val, y_val,
                loss_name, w_pos, w_neg,
                reg_name, lam, opt_name, lr, schedule, backtracking,
                epochs, batch_size, seed, log_every_iters,
-               alpha0=1.0, momentum=0.9):
+               alpha0=1.0):
     """Run one training trial and return (val_auprc, val_metrics, val_loss, train_time, result)."""
     loss_fn = build_loss(loss_name, w_pos=w_pos, w_neg=w_neg)
     regularizer = build_regularizer(reg_name, lam=lam)
     optimizer = build_optimizer(
         opt_name, lr=lr, schedule=schedule,
         backtracking=backtracking,
-        alpha0=alpha0, momentum=momentum,
+        alpha0=alpha0,
     )
     is_full_batch = opt_name in FULL_BATCH_OPTIMIZERS
     t0 = time.time()
@@ -236,9 +236,9 @@ def main():
             rows.append(row)
 
     # Objective: l1
-    print("\n[Stage B] objective = loss + L1 (subgradient)")
+    print("\n[Stage B] objective = loss + L1 (proximal)")
     for lam in LAMBDA_GRID:
-        for trial in build_grid("l1", backtracking_too=False):
+        for trial in build_grid("l1", backtracking_too=not args.no_backtracking):
             row = run_one(args, data, loss_hp, "l1", lam, trial)
             print(f"  lam={lam:<6} {row['optimizer']:<22} lr={row['lr']:<6} AUPRC={row.get('val_auprc')}")
             rows.append(row)

@@ -1,70 +1,85 @@
-# Hướng Dẫn Sử Dụng: Huấn Luyện & Thực Nghiệm Mô Hình
+# Hướng Dẫn Sử Dụng Toàn Diện: Logistic Regression Optimization Framework
 
-Tài liệu này hướng dẫn cách chạy thực nghiệm mô hình Logistic Regression sử dụng các công cụ đã được cung cấp trong repository. 
+Tài liệu này là hướng dẫn chính thức và toàn diện cho việc chạy thực nghiệm mô hình Logistic Regression sử dụng mã nguồn trong dự án. Tài liệu giải thích chi tiết mọi tham số CLI, các tổ hợp hợp lệ, giá trị mặc định, và những lưu ý cốt lõi về thuật toán.
 
-## 1. Môi trường chạy
-Môi trường bắt buộc là `optim`.
-Kích hoạt bằng lệnh:
+---
+
+## 1. Môi Trường Chạy
+Bạn bắt buộc phải kích hoạt môi trường Conda đã cài đặt trước khi chạy bất kỳ script nào.
 ```bash
 conda activate optim
 ```
 
-## 2. File `run_train.sh`
+---
 
-`run_train.sh` là script bash mẫu dùng để chạy **một cấu hình thực nghiệm duy nhất**. 
-Bên trong script, công việc thực tế được chuyển giao cho lệnh `python -m scripts.train`.
+## 2. Kịch Bản Khởi Chạy (Scripts)
 
-### Chỉnh sửa tham số
-Bạn có thể tự do chỉnh sửa các cờ (flags) truyền cho `scripts.train` bên trong file `run_train.sh` bằng bất cứ text editor nào.
+Dự án cung cấp 2 kịch bản chính:
+1.  **`run_train.sh` (Single Run):** Gọi `scripts/train.py`. Dùng để chạy thử nghiệm một tổ hợp thuật toán - tham số cụ thể. Rất hữu ích để debug hoặc theo dõi chi tiết một quá trình hội tụ.
+2.  **`run_tune.sh` (Grid Search):** Gọi `scripts/tune.py`. Dùng để tự động chạy quét hàng loạt các tham số (Learning rate, Lambda) qua các thuật toán khác nhau, sau đó xuất ra bảng tổng hợp kết quả (summary csv) và file cấu hình tốt nhất.
 
-Ví dụ về một lệnh gọi chuẩn trong script:
-```bash
-python -m scripts.train \
-  --loss bce \
-  --reg l2 \
-  --lam 1e-2 \
-  --optimizer newton \
-  --backtracking \
-  --epochs 50 \
-  --data-dir "$DATA_DIR" \
-  --out-dir "$OUT_DIR" \
-  --eval-test \
-  --save-figures
-```
-
-### Giải thích các tham số quan trọng
-
-*   `--loss {bce, weighted_bce, squared_hinge}`: Chọn hàm Loss.
-*   `--reg {none, l2, l1}`: Chọn loại hàm điều chuẩn (Regularizer).
-    *   *Lưu ý:* `l1` không hỗ trợ thuật toán bậc 2 (Newton).
-*   `--lam FLOAT`: Độ lớn (strength) của tham số điều chuẩn ($\lambda$).
-*   `--optimizer {gd, nag, newton, sgd}`: Chọn thuật toán tối ưu.
-*   `--epochs INT`: Số lượng vòng lặp (Epochs) tối đa.
-*   `--eval-test`: Nếu có cờ này, sau khi train xong, mô hình (tại epoch có AUPRC Validation tốt nhất) sẽ được dùng để đánh giá trên tập Test.
-*   `--save-figures`: Nếu có cờ này, sẽ vẽ biểu đồ Loss và Gradient Norm rồi lưu vào ảnh `convergence.png`.
-
-## 3. Lưu ý sống còn về cơ chế Step Size (Learning Rate vs. Backtracking)
-
-Cách hệ thống xử lý bước nhảy phụ thuộc vào việc bạn **có bật cờ `--backtracking` hay không**.
-
-### Trường hợp 1: Chế độ Fixed Step Size (KHÔNG dùng `--backtracking`)
-*   Nếu bạn KHÔNG truyền cờ `--backtracking`, thuật toán sẽ sử dụng **Fixed step size**.
-*   Khi đó, độ lớn của bước nhảy được quy định hoàn toàn bởi tham số `--lr`.
-*   Ví dụ: `--optimizer gd --lr 0.05` => Chạy Gradient Descent với bước nhảy cố định $t = 0.05$ suốt toàn bộ quá trình.
-
-### Trường hợp 2: Chế độ Backtracking Line Search (CÓ dùng `--backtracking`)
-*   Nếu bạn truyền cờ `--backtracking`, hệ thống sẽ kích hoạt tìm kiếm bước nhảy tự động.
-*   **QUAN TRỌNG:** Ở chế độ này, giá trị của `--lr` sẽ bị **bỏ qua hoàn toàn** (dù bạn có truyền vào hay không).
-*   Thay vào đó, Backtracking sẽ luôn luôn khởi tạo bước thử nghiệm đầu tiên (initial step) bằng một tham số riêng gọi là `--alpha0`. 
-*   Giá trị mặc định của `--alpha0` là `1.0`. Nếu bạn không truyền `--alpha0`, thuật toán luôn bắt đầu thử bước $t = 1.0$ rồi chia đôi dần (nhân với 0.5) cho đến khi thỏa mãn điều kiện Armijo/Parabol.
-*   Ví dụ: `--optimizer gd --backtracking --lr 0.05` => Chạy GD với Backtracking. Khởi tạo thử nghiệm luôn là $t=1.0$ (bỏ qua giá trị 0.05), lặp lại việc giảm $t$ để tìm được bước đi tối ưu cho iter hiện tại.
-
-### Cơ chế Scheduling cho SGD
-*   Thuật toán `sgd` (Stochastic Gradient Descent) làm việc với mini-batch, do đó **không hỗ trợ Backtracking**.
-*   Tuy nhiên, SGD có cơ chế giảm bước nhảy dần đều (Diminishing step size) theo lý thuyết Robbins-Monro.
-*   Bạn điều khiển bằng cờ `--lr-schedule {fixed, diminishing}`.
-    *   Nếu `--lr-schedule fixed`: SGD chạy với bước nhảy không đổi bằng `--lr`.
-    *   Nếu `--lr-schedule diminishing`: SGD khởi tạo bước nhảy là `--lr`, và ở bước thứ $k$, bước nhảy thực tế sẽ là $t_k = \frac{\text{--lr}}{\sqrt{k}}$.
+Bạn có thể chỉnh sửa trực tiếp nội dung các file bash `.sh` này, hoặc gọi thẳng file python trên terminal.
 
 ---
-*Tóm lại, nếu muốn tuning cố định, hãy quét (sweep) tham số `--lr`. Nếu muốn thuật toán tự đi tìm, hãy bật `--backtracking` và không cần bận tâm đến `--lr`.*
+
+## 3. Từ Điển Tham Số CLI (dành cho `scripts/train.py`)
+
+Dưới đây là toàn bộ các arguments bạn có thể truyền vào `scripts/train.py`.
+
+### 3.1. Cấu hình Hàm Mục Tiêu (Objective)
+*   `--loss`: Hàm suy hao. Cấu hình: `bce` (mặc định), `weighted_bce`, `squared_hinge`, `focal`.
+    *   *Lưu ý:* `focal` là hàm không lồi (non-convex).
+*   `--w-pos`, `--w-neg` (Kiểu float): Dùng riêng cho `weighted_bce` để xử lý dữ liệu mất cân bằng (imbalanced). Mặc định đều là `1.0`.
+*   `--reg`: Hàm điều chuẩn (Regularizer). Cấu hình: `none` (mặc định), `l2` (Ridge), `l1` (Lasso).
+*   `--lam` (Kiểu float): Hệ số điều chuẩn $\lambda$. Mặc định `0.0`. Chỉ có tác dụng khi `--reg` là `l1` hoặc `l2`.
+
+### 3.2. Cấu hình Thuật Toán (Optimizer)
+*   `--optimizer`: Thuật toán tối ưu. Cấu hình: `gd` (mặc định), `nag` (Nesterov), `newton`, `sgd`.
+
+### 3.3. Cấu hình Bước Nhảy (Step Size / Line Search)
+ĐÂY LÀ PHẦN QUAN TRỌNG NHẤT. Có 3 tham số chi phối bước nhảy: `--lr`, `--backtracking`, và `--alpha0`.
+
+*   `--lr` (Kiểu float, mặc định `1e-2`): Chiều dài bước nhảy (Learning Rate) khi chạy ở chế độ **Fixed Step Size**. 
+*   `--backtracking` (Cờ/Flag, không cần giá trị): Kích hoạt tính năng tìm kiếm bước nhảy tự động (Armijo / Parabol / Lipschitz). 
+    *   **⚠️ LƯU Ý ĐỎ:** Nếu bạn thêm cờ `--backtracking`, tham số `--lr` **SẼ BỊ BỎ QUA HOÀN TOÀN** (ngay cả khi bạn chỉ định `--lr 0.05`, thuật toán cũng không quan tâm).
+*   `--alpha0` (Kiểu float, mặc định `1.0`): Bước nhảy khởi tạo (Initial step) dành **riêng cho chế độ Backtracking**. Mỗi iteration, thuật toán sẽ bắt đầu thử với bước $t = \text{alpha0}$, sau đó giảm dần nếu chưa thỏa mãn điều kiện.
+*   `--lr-schedule`: Chế độ giảm bước nhảy. Cấu hình: `fixed` (mặc định), `diminishing`.
+    *   *Chỉ có tác dụng khi `--optimizer sgd`.* Nếu `diminishing`, bước nhảy sẽ giảm theo $t_k = \frac{\text{lr}}{\sqrt{k}}$.
+
+### 3.4. Cấu hình Quá Trình Huấn Luyện
+*   `--epochs` (Kiểu int, mặc định `50`): Số vòng lặp qua toàn bộ dữ liệu.
+*   `--batch-size` (Kiểu int, mặc định `256`): Kích thước mini-batch. 
+    *   *Lưu ý:* Chỉ có tác dụng với `--optimizer sgd`. Các thuật toán còn lại (GD, NAG, Newton) luôn là Full-Batch (dùng toàn bộ tập train), tham số này tự động bị bỏ qua.
+*   `--seed` (Kiểu int, mặc định `42`): Hạt giống ngẫu nhiên để chia batch cho SGD và lấy mẫu Hessian.
+
+### 3.5. Logging và Output
+*   `--data-dir`, `--out-dir`: Thư mục chứa data và nơi lưu output. Mặc định `data` và `runs`.
+*   `--log-every-iters` (Kiểu int, mặc định `50`): Tần suất (tính theo bước cập nhật/iteration) ghi log Train Loss và Gradient Norm để vẽ biểu đồ mịn.
+*   `--verbose-every` (Kiểu int, mặc định `10`): Tần suất (tính theo Epoch) in kết quả ra Terminal.
+*   `--eval-test` (Cờ/Flag): Chạy đánh giá trên tập Test sau khi train xong bằng Checkpoint có Validation AUPRC cao nhất.
+*   `--save-figures` (Cờ/Flag): Tự động tạo và lưu ảnh biểu đồ hội tụ (Convergence plot).
+*   `--hessian-spectrum` (Cờ/Flag): Tính toán phổ giá trị riêng (Eigenvalues) của ma trận Hessian ở epoch cuối. Lưu thành file `.npy`. (Tốn thời gian với data lớn).
+*   `--no-standardize` (Cờ/Flag): Tắt tính năng tự động chuẩn hóa Z-score (Mean/Std) dữ liệu. (Không khuyến cáo).
+
+---
+
+## 4. Ma Trận Tương Thích (Khắc phục lỗi chạy)
+
+Không phải tổ hợp tham số nào cũng hợp lệ về mặt toán học. Dưới đây là bảng quy tắc sống còn mà code đã thiết lập:
+
+| Đặc tính / Mục tiêu | Cấu hình cho phép chạy | Tổ hợp sẽ BÁO LỖI (Bị Cấm) | Giải thích ngắn gọn |
+| :--- | :--- | :--- | :--- |
+| **Bậc 2 (Newton)** | `--reg none`, `--reg l2` | CẤM DÙNG VỚI `--reg l1` | L1 không khả vi (Non-smooth). Việc đưa L1 vào ma trận Hessian là sai toán học. L1 không thể dùng Newton. |
+| **Backtracking Line Search** | `gd`, `nag`, `newton` | CẤM DÙNG VỚI `--optimizer sgd` | SGD dùng Mini-batch, hàm mục tiêu bị nhiễu từng bước. Backtracking đòi hỏi đánh giá sự suy giảm của Full-batch objective, không thể áp dụng cho SGD. |
+| **Bước nhảy Diminishing** | `--optimizer sgd` | CẤM (Vô tác dụng) với `gd`, `nag`, `newton` | GD/NAG/Newton luôn dùng Fixed Step hoặc Backtracking. Scheduling $1/\sqrt{k}$ chỉ dành cho SGD. |
+| **Soft-Thresholding (ISTA/FISTA)** | Kích hoạt tự động khi chọn `--reg l1` với `gd`, `nag`, `sgd`. | N/A | Code tự động chuyển sang dùng toán tử kế cận (Proximal Operator) thay vì đạo hàm cho L1. Backtracking của L1 cũng tự động chuyển sang mô hình Parabol Majorization. |
+
+---
+
+## 5. Hiện Vật Đầu Ra (Artifacts)
+Sau khi chạy `scripts/train.py`, hệ thống sinh ra một folder độc nhất tại `runs/<run_id>/` chứa:
+1.  `config.json`: File lưu toàn bộ tham số đã dùng (cực kỳ quan trọng để tái lập kết quả).
+2.  `history.npz`: File numpy chứa các mảng lịch sử (Train loss, Val metrics, Thời gian, Iteration).
+3.  `metrics.json`: Thống kê kết quả AUPRC, F1, Accuracy... của mô hình tốt nhất.
+4.  `checkpoints/best.npz` và `checkpoints/last.npz`: Trọng số $w$ và bias $b$ đã học.
+5.  `convergence.png`: (Nếu có cờ `--save-figures`). Ảnh vẽ 3 panel đánh giá quá trình hội tụ.
