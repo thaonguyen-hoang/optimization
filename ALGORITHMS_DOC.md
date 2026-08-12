@@ -18,7 +18,7 @@ Thuật toán leo đồi bậc 1 cơ bản.
 *   **Fixed Step Size:** 
     $x_{k+1} = x_k - t \nabla F(x_k)$
 *   **Backtracking Line Search:** 
-    Khởi tạo $t = \alpha_0$ (mặc định $\alpha_0 = 1.0$). Lặp lại việc giảm $t \leftarrow \beta t$ (với hệ số co $\beta = 0.5$) cho đến khi thỏa mãn bất đẳng thức giảm đủ (Armijo condition):
+    Khởi tạo $t = t_{init}$ (mặc định $t_{init} = 1.0$). Lặp lại việc giảm $t \leftarrow \beta t$ (với hệ số co $\beta = 0.5$) cho đến khi thỏa mãn bất đẳng thức giảm đủ (Armijo condition):
     $$F(x_k - t \nabla F(x_k)) \le F(x_k) - \alpha t \Vert\nabla F(x_k)\Vert_2^2$$
     *(Với hằng số nới lỏng $\alpha = 10^{-4}$)*
 
@@ -29,7 +29,7 @@ Thuật toán tăng tốc bậc 1 dựa trên quán tính. Duy trì một dãy g
     Tính tâm quán tính dự phóng: $y_k = x_k + \frac{s_{k-1} - 1}{s_k} (x_k - x_{k-1})$
     Cập nhật gradient tại $y_k$: $x_{k+1} = y_k - t \nabla F(y_k)$
 *   **Backtracking Line Search:**
-    Vẫn tính $y_k$ như trên. Khởi tạo $t = \alpha_0$. Thử $x_{new} = y_k - t \nabla F(y_k)$ và lặp giảm $t \leftarrow \beta t$ cho đến khi thỏa mãn bất đẳng thức chặn trên (Parabol Majorization / Lipschitz Upper Bound), **không dùng** hệ số nới lỏng $\alpha$:
+    Vẫn tính $y_k$ như trên. Khởi tạo $t = t_{init}$. Thử $x_{new} = y_k - t \nabla F(y_k)$ và lặp giảm $t \leftarrow \beta t$ cho đến khi thỏa mãn bất đẳng thức chặn trên (Parabol Majorization / Lipschitz Upper Bound), **không dùng** hệ số nới lỏng $\alpha$:
     $$F(x_{new}) \le F(y_k) - \frac{t}{2} \Vert\nabla F(y_k)\Vert_2^2$$
     > **Ghi chú về Hiệu năng (Computational Cost):** 
     > Bản chất của bất đẳng thức trên là Descent Lemma (còn gọi là Lipschitz Upper Bound): 

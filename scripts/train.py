@@ -51,7 +51,7 @@ def parse_args():
     p.add_argument("--lr-schedule", choices=["fixed", "diminishing"], default="fixed", help="lr schedule for SGD")
     p.add_argument("--backtracking", type=int, choices=[0, 1], default=0,
                    help="use backtracking line search (Armijo/Parabol) for gd/nag/newton (0=no, 1=yes)")
-    p.add_argument("--alpha0", type=float, default=1.0, help="backtracking initial step")
+    p.add_argument("--initial_lr", type=float, default=1.0, help="backtracking initial step")
     p.add_argument("--w-pos", type=float, default=1.0, help="weighted BCE positive weight")
     p.add_argument("--w-neg", type=float, default=1.0, help="weighted BCE negative weight")
     p.add_argument("--epochs", type=int, default=50)
@@ -84,7 +84,7 @@ def build_config(args):
         "loss": args.loss, "reg": args.reg, "lam": args.lam,
         "optimizer": args.optimizer, "lr": args.lr,
         "lr_schedule": args.lr_schedule,
-        "backtracking": bool(args.backtracking), "alpha0": args.alpha0,
+        "backtracking": bool(args.backtracking), "initial_lr": args.initial_lr,
         "w_pos": args.w_pos, "w_neg": args.w_neg,
         "epochs": args.epochs, "batch_size": args.batch_size,
         "seed": args.seed, "log_every_iters": args.log_every_iters,
@@ -103,7 +103,7 @@ def main():
         opt_name, lr=args.lr,
         backtracking=bool(args.backtracking),
         schedule=args.lr_schedule,
-        alpha0=args.alpha0,
+        initial_lr=args.initial_lr,
     )
 
     # enforce full-batch for second-order / backtracking first-order methods

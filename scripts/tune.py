@@ -65,14 +65,14 @@ def _run_trial(X_train, y_train, X_val, y_val,
                loss_name, w_pos, w_neg,
                reg_name, lam, opt_name, lr, schedule, backtracking,
                epochs, batch_size, seed, log_every_iters,
-               alpha0=1.0):
+               initial_lr=1.0):
     """Run one training trial and return (val_auprc, val_metrics, val_loss, train_time, result)."""
     loss_fn = build_loss(loss_name, w_pos=w_pos, w_neg=w_neg)
     regularizer = build_regularizer(reg_name, lam=lam)
     optimizer = build_optimizer(
         opt_name, lr=lr, schedule=schedule,
         backtracking=backtracking,
-        alpha0=alpha0,
+        initial_lr=initial_lr,
     )
     is_full_batch = opt_name in FULL_BATCH_OPTIMIZERS
     t0 = time.time()
@@ -128,7 +128,7 @@ def build_grid(reg_name, backtracking_too):
             for lr in LR_GRID:
                 trials.append((opt, lr, "fixed", False))
             if backtracking_too:
-                trials.append((opt, 1.0, "fixed", True)) # alpha0=1.0 fixed for bt
+                trials.append((opt, 1.0, "fixed", True)) # initial_lr=1.0 fixed for bt
         # SGD
         for lr in LR_GRID:
             trials.append(("sgd", lr, "fixed", False))

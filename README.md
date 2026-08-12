@@ -101,7 +101,7 @@ python -m scripts.tune --loss bce --tune-epochs 30
 
 - **Smooth (none, L2):** GD, SGD, NAG, Newton with
      fixed `lr ∈ [1e-4, 1e-3, 1e-2, 1e-1, 1.0]`, **and** the backtracking
-     variants (Armijo for GD/Newton, Parabol for NAG; `α₀=1, c=1e-4, ρ=0.5`).
+     variants (Armijo for GD/Newton, Parabol for NAG; `initial_lr=1, c=1e-4, ρ=0.5`).
    - **Non-smooth (L1):** GD (ISTA), NAG (FISTA), SGD (Proximal) with both
      fixed `lr` and **Proximal Backtracking** (Parabol Majorization on smooth part).
 

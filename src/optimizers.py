@@ -40,11 +40,12 @@ LAMBDA_GRID = [1e-4, 1e-3, 1e-2, 1e-1, 1.0]
 
 class GD:
     name = "gd"
-    def __init__(self, lr: float = 1e-2, backtracking: bool = False, beta: float = 0.5, alpha: float = 1e-4):
+    def __init__(self, lr: float = 1e-2, backtracking: bool = False, beta: float = 0.5, alpha: float = 1e-4, initial_lr: float = 1.0):
         self.lr = lr
         self.backtracking = backtracking
         self.beta = beta
         self.alpha = alpha
+        self.initial_lr = initial_lr
 
     def reset(self, w_shape, b_shape):
         pass
@@ -65,7 +66,7 @@ class GD:
                 w_new = w - t * gw
                 b_new = b - t * gb
             else:
-                t = 1.0  # initialize backtracking
+                t = self.initial_lr  # initialize backtracking
                 while True:
                     w_new = w - t * gw
                     b_new = b - t * gb
@@ -89,7 +90,7 @@ class GD:
                 w_new = ctx["prox"](w - t * gw, t * ctx["lam"])
                 b_new = b - t * gb  # bias is not regularized
             else:
-                t = 1.0
+                t = self.initial_lr
                 while True:
                     w_new = ctx["prox"](w - t * gw, t * ctx["lam"])
                     b_new = b - t * gb
@@ -112,10 +113,11 @@ class GD:
 
 class NAG:
     name = "nag"
-    def __init__(self, lr: float = 1e-2, backtracking: bool = False, beta: float = 0.5):
+    def __init__(self, lr: float = 1e-2, backtracking: bool = False, beta: float = 0.5, initial_lr: float = 1.0):
         self.lr = lr
         self.backtracking = backtracking
         self.beta = beta
+        self.initial_lr = initial_lr
         self.s = 1.0
         self.x_prev_w = None
         self.x_prev_b = None
@@ -149,7 +151,7 @@ class NAG:
                 x_new_b = y_b_actual - t * gb_act
                 self.s = s_next
             else:
-                t = 1.0
+                t = self.initial_lr
                 F_y = ctx["F_val"](y_w, y_b)
                 
                 # OPTIMIZATION NOTE (Bản chất Toán học & Hiệu năng):
@@ -190,7 +192,7 @@ class NAG:
                 self.s = s_next
             else:
                 # FISTA-BT with energy-preserving s_k
-                t = 1.0
+                t = self.initial_lr
                 t_prev = self.lr
                 
                 while True:
@@ -314,10 +316,12 @@ class SGD:
 def build_optimizer(name: str, lr: float = 1e-2, backtracking: bool = False, schedule: str = "fixed", **kwargs):
     name = name.lower()
     if name == "gd":
-        return GD(lr=lr, backtracking=backtracking)
+        return GD(lr=lr, backtracking=backtracking, initial_lr=kwargs.get("initial_lr", 1.0))
     if name == "nag":
-        return NAG(lr=lr, backtracking=backtracking)
+        return NAG(lr=lr, backtracking=backtracking, initial_lr=kwargs.get("initial_lr", 1.0))
     if name == "newton":
+        # Pure Newton mathematically MUST start backtracking at t=1.0 to retain quadratic convergence.
+        # We enforce initial_lr=1.0 regardless of what is passed in kwargs.
         return Newton(backtracking=backtracking)
     if name == "sgd":
         return SGD(lr=lr, schedule=schedule)

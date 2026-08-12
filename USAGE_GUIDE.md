@@ -37,12 +37,12 @@ Dưới đây là toàn bộ các arguments bạn có thể truyền vào `scrip
 *   `--optimizer`: Thuật toán tối ưu. Cấu hình: `gd` (mặc định), `nag` (Nesterov), `newton`, `sgd`.
 
 ### 3.3. Cấu hình Bước Nhảy (Step Size / Line Search)
-ĐÂY LÀ PHẦN QUAN TRỌNG NHẤT. Có 3 tham số chi phối bước nhảy: `--lr`, `--backtracking`, và `--alpha0`.
+ĐÂY LÀ PHẦN QUAN TRỌNG NHẤT. Có 3 tham số chi phối bước nhảy: `--lr`, `--backtracking`, và `--initial_lr`.
 
 *   `--lr` (Kiểu float, mặc định `1e-2`): Chiều dài bước nhảy (Learning Rate) khi chạy ở chế độ **Fixed Step Size**. 
 *   `--backtracking` (Cờ/Flag, không cần giá trị): Kích hoạt tính năng tìm kiếm bước nhảy tự động (Armijo / Parabol / Lipschitz). 
     *   **⚠️ LƯU Ý ĐỎ:** Nếu bạn thêm cờ `--backtracking`, tham số `--lr` **SẼ BỊ BỎ QUA HOÀN TOÀN** (ngay cả khi bạn chỉ định `--lr 0.05`, thuật toán cũng không quan tâm).
-*   `--alpha0` (Kiểu float, mặc định `1.0`): Bước nhảy khởi tạo (Initial step) dành **riêng cho chế độ Backtracking**. Mỗi iteration, thuật toán sẽ bắt đầu thử với bước $t = \text{alpha0}$, sau đó giảm dần nếu chưa thỏa mãn điều kiện.
+*   `--initial_lr` (Kiểu float, mặc định `1.0`): Bước nhảy khởi tạo (Initial step) dành **riêng cho chế độ Backtracking**. Mỗi iteration, thuật toán sẽ bắt đầu thử với bước $t = \text{initial_lr}$, sau đó giảm dần nếu chưa thỏa mãn điều kiện.
 *   `--lr-schedule`: Chế độ giảm bước nhảy. Cấu hình: `fixed` (mặc định), `diminishing`.
     *   *Chỉ có tác dụng khi `--optimizer sgd`.* Nếu `diminishing`, bước nhảy sẽ giảm theo $t_k = \frac{\text{lr}}{\sqrt{k}}$.
 
