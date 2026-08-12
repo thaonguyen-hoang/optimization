@@ -25,9 +25,9 @@ SEED = 42
 TARGET_COL = "Diabetes_binary"
 
 # Default file names inside data_dir.
-TRAIN_CSV = "diabetes_binary_health_indicators_BRFSS2015.csv"
-VAL_CSV = "diabetes_2021_val.csv"
-TEST_CSV = "diabetes_2021_test.csv"
+TRAIN_CSV = "train.csv"
+VAL_CSV = "val.csv"
+TEST_CSV = "test.csv"
 
 
 def load_data(path: str) -> pd.DataFrame:

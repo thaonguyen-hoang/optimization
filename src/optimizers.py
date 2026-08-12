@@ -94,6 +94,8 @@ class GD:
                     w_new = ctx["prox"](w - t * gw, t * ctx["lam"])
                     b_new = b - t * gb
                     f_new = ctx["f_val"](w_new, b_new)
+                    
+                    # NOTE: Không thể rút gọn như Smooth GD, bắt buộc tính đủ
                     diff_w = w_new - w
                     diff_b = b_new - b
                     diff_sq = float(np.sum(diff_w**2) + diff_b**2)
@@ -149,12 +151,24 @@ class NAG:
             else:
                 t = 1.0
                 F_y = ctx["F_val"](y_w, y_b)
+                
+                # OPTIMIZATION NOTE (Bản chất Toán học & Hiệu năng):
+                # Bản chất điều kiện Backtracking ở đây chính là Descent Lemma (Lipschitz Upper Bound):
+                # F(x_new) <= F(y) + <grad_F(y), x_new - y> + (1/2t)||x_new - y||^2
+                # Tuy nhiên, đối với hàm hoàn toàn trơn, ta có x_new - y = -t * grad_F(y).
+                # Bằng cách thế trực tiếp vào bất đẳng thức, ta rút gọn được thành:
+                # F(x_new) <= F(y) - (t/2)||grad_F(y)||^2
+                # Lợi ích khổng lồ về mặt tính toán: ||grad_F(y)||^2 không phụ thuộc vào t.
+                # Ta tính nó ĐÚNG 1 LẦN duy nhất ở ngoài vòng lặp while (tốn O(d)), 
+                # giúp bên trong vòng lặp thử t (while) chỉ cần làm phép tính vô hướng O(1).
                 grad_sq_norm = float(np.sum(gw**2) + gb**2)
+                
                 while True:
                     x_new_w = y_w - t * gw
                     x_new_b = y_b - t * gb
                     F_new = ctx["F_val"](x_new_w, x_new_b)
-                    # Parabol without alpha: F(x_new) <= F(y) - (t/2)||grad_F(y)||^2
+                    
+                    # Parabol Majorization (Rút gọn từ Descent Lemma)
                     if F_new <= F_y - (t / 2.0) * grad_sq_norm + 1e-12:
                         break
                     t *= self.beta
@@ -192,6 +206,11 @@ class NAG:
                     x_new_w = ctx["prox"](y_w_bt - t * gw_bt, t * ctx["lam"])
                     x_new_b = y_b_bt - t * gb_bt
                     
+                    # OPTIMIZATION NOTE:
+                    # Vì x_new được sinh ra từ toán tử Proximal chứ không phải trực tiếp là
+                    # x_new = y - t*grad, ta KHÔNG THỂ rút gọn (x_new - y) thành -t*grad.
+                    # Do đó, bất đẳng thức Descent Lemma (Lipschitz Upper Bound) phải được tính đầy đủ.
+                    # Mỗi lần thử t, máy tính buộc phải thực hiện O(d) phép tính mảng (diff_w, dot_grad).
                     f_new = ctx["f_val"](x_new_w, x_new_b)
                     diff_w = x_new_w - y_w_bt
                     diff_b = x_new_b - y_b_bt

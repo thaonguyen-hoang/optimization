@@ -114,8 +114,12 @@ def plot_convergence_full(history, title="Convergence", x_axis="epoch"):
     x_loss = hist[x_axis]
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
-    axes[0].plot(x_loss, hist["train_loss"], label="train", alpha=0.8)
-    axes[0].plot(x_loss, hist["val_loss"], label="val", alpha=0.8)
+    tmask = ~np.isnan(hist["train_loss"])
+    axes[0].plot(x_loss[tmask], hist["train_loss"][tmask], label="train",
+                 alpha=0.8, marker="o", ms=3)
+    vmask = ~np.isnan(hist["val_loss"])
+    axes[0].plot(x_loss[vmask], hist["val_loss"][vmask], label="val",
+                 alpha=0.8, marker="s", ms=3)
     axes[0].set_xlabel(x_axis); axes[0].set_ylabel("loss")
     axes[0].set_title(f"{title} — loss"); axes[0].legend()
 

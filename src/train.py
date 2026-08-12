@@ -162,9 +162,12 @@ def train_logreg(X_train, y_train, X_val, y_val,
         p_val = logits_to_proba(z_val, loss_fn.name)
         m_val = compute_metrics(y_val, p_val)
 
+        # compute train loss for this epoch
+        ep_train_loss = F_val(w, b)
+
         hist["iter"].append(global_iter)
         hist["epoch"].append(epoch)
-        hist["train_loss"].append(np.nan)
+        hist["train_loss"].append(ep_train_loss)
         hist["val_loss"].append(val_loss)
         
         if is_full_batch:
@@ -187,7 +190,7 @@ def train_logreg(X_train, y_train, X_val, y_val,
             best_w, best_b, best_epoch = w.copy(), b, epoch
 
         if verbose_every and (epoch % verbose_every == 0 or epoch == n_epochs - 1):
-            print(f"epoch {epoch:4d}  val_loss={val_loss:.4f}  "
+            print(f"epoch {epoch:4d}  train_loss={ep_train_loss:.4f}  val_loss={val_loss:.4f}  "
                   f"val_auprc={m_val['auprc']:.4f}  "
                   f"val_f1={m_val['f1_minority']:.4f}  "
                   f"val_acc={m_val['accuracy']:.4f}  "

@@ -21,7 +21,6 @@ import json
 import os
 import sys
 import time
-import uuid
 
 import numpy as np
 
@@ -50,8 +49,8 @@ def parse_args():
                    help="gd|nag|newton|sgd")
     p.add_argument("--lr", type=float, default=1e-2, help="fixed step size (fixed-step mode)")
     p.add_argument("--lr-schedule", choices=["fixed", "diminishing"], default="fixed", help="lr schedule for SGD")
-    p.add_argument("--backtracking", action="store_true",
-                   help="use backtracking line search (Armijo/Parabol) for gd/nag/newton")
+    p.add_argument("--backtracking", type=int, choices=[0, 1], default=0,
+                   help="use backtracking line search (Armijo/Parabol) for gd/nag/newton (0=no, 1=yes)")
     p.add_argument("--alpha0", type=float, default=1.0, help="backtracking initial step")
     p.add_argument("--w-pos", type=float, default=1.0, help="weighted BCE positive weight")
     p.add_argument("--w-neg", type=float, default=1.0, help="weighted BCE negative weight")
@@ -76,7 +75,8 @@ def make_run_id(args):
     if args.run_id:
         return args.run_id
     tag = f"{args.loss}_{args.reg}_{args.optimizer}_lr{args.lr}_lam{args.lam}"
-    return f"{tag}_{uuid.uuid4().hex[:6]}"
+    stamp = time.strftime("%m-%d-%H-%M")
+    return f"{tag}_{stamp}"
 
 
 def build_config(args):
@@ -84,7 +84,7 @@ def build_config(args):
         "loss": args.loss, "reg": args.reg, "lam": args.lam,
         "optimizer": args.optimizer, "lr": args.lr,
         "lr_schedule": args.lr_schedule,
-        "backtracking": args.backtracking, "alpha0": args.alpha0,
+        "backtracking": bool(args.backtracking), "alpha0": args.alpha0,
         "w_pos": args.w_pos, "w_neg": args.w_neg,
         "epochs": args.epochs, "batch_size": args.batch_size,
         "seed": args.seed, "log_every_iters": args.log_every_iters,
@@ -101,7 +101,7 @@ def main():
     regularizer = build_regularizer(args.reg, lam=args.lam)
     optimizer = build_optimizer(
         opt_name, lr=args.lr,
-        backtracking=args.backtracking,
+        backtracking=bool(args.backtracking),
         schedule=args.lr_schedule,
         alpha0=args.alpha0,
     )

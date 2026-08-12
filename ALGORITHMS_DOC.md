@@ -29,8 +29,12 @@ Thuật toán tăng tốc bậc 1 dựa trên quán tính. Duy trì một dãy g
     Tính tâm quán tính dự phóng: $y_k = x_k + \frac{s_{k-1} - 1}{s_k} (x_k - x_{k-1})$
     Cập nhật gradient tại $y_k$: $x_{k+1} = y_k - t \nabla F(y_k)$
 *   **Backtracking Line Search:**
-    Vẫn tính $y_k$ như trên. Khởi tạo $t = \alpha_0$. Thử $x_{new} = y_k - t \nabla F(y_k)$ và lặp giảm $t \leftarrow \beta t$ cho đến khi thỏa mãn bất đẳng thức chặn trên (Parabol Majorization), **không dùng** hệ số nới lỏng $\alpha$:
+    Vẫn tính $y_k$ như trên. Khởi tạo $t = \alpha_0$. Thử $x_{new} = y_k - t \nabla F(y_k)$ và lặp giảm $t \leftarrow \beta t$ cho đến khi thỏa mãn bất đẳng thức chặn trên (Parabol Majorization / Lipschitz Upper Bound), **không dùng** hệ số nới lỏng $\alpha$:
     $$F(x_{new}) \le F(y_k) - \frac{t}{2} \Vert\nabla F(y_k)\Vert_2^2$$
+    > **Ghi chú về Hiệu năng (Computational Cost):** 
+    > Bản chất của bất đẳng thức trên là Descent Lemma (còn gọi là Lipschitz Upper Bound): 
+    > $F(x_{new}) \le F(y) + \nabla F(y)^T (x_{new} - y) + \frac{1}{2t} \Vert x_{new} - y \Vert_2^2$
+    > Vì $x_{new} = y - t \nabla F(y)$ nên ta rút gọn được phép trừ và phép tích vô hướng. Lợi ích khổng lồ là số hạng $\Vert \nabla F(y) \Vert_2^2$ không chứa $t$, nên trong code chỉ cần tính đúng 1 lần bên ngoài vòng lặp backtracking. Bên trong vòng lặp thử $t$, máy tính chỉ việc làm phép tính vô hướng $O(1)$ thay vì $O(d)$.
 
 ### 3. Newton Method
 Thuật toán bậc 2, sử dụng ma trận Hessian $H = \nabla^2 F(x_k)$. Hướng dịch chuyển $\Delta x = -H^{-1} \nabla F(x_k)$.
@@ -57,7 +61,7 @@ $$ \text{prox}_{t\lambda}(x) = \text{sign}(x) \max(|x| - t\lambda, 0) $$
 *   **Proximal Fixed Step Size:**
     $x_{k+1} = \text{prox}_{t\lambda} (x_k - t \nabla f(x_k))$
 *   **Proximal Backtracking (ISTA-BT):**
-    Khởi tạo $t$. Thử $x_{new} = \text{prox}_{t\lambda} (x_k - t \nabla f(x_k))$ và lặp giảm $t \leftarrow \beta t$ cho đến khi phần hàm trơn $f(x)$ thỏa mãn bất đẳng thức chặn trên (Lipschitz):
+    Khởi tạo $t$. Thử $x_{new} = \text{prox}_{t\lambda} (x_k - t \nabla f(x_k))$ và lặp giảm $t \leftarrow \beta t$ cho đến khi phần hàm trơn $f(x)$ thỏa mãn bất đẳng thức chặn trên (Lipschitz Upper Bound / Parabol Majorization):
     $$f(x_{new}) \le f(x_k) + \nabla f(x_k)^T (x_{new} - x_k) + \frac{1}{2t} \Vert x_{new} - x_k \Vert_2^2$$
 
 ### 2. FISTA (Fast ISTA - NAG + Proximal)
@@ -70,6 +74,7 @@ Tích hợp động lượng Nesterov vào quá trình Proximal.
     - Tâm quán tính: $y_k = x_k + \frac{s_{k-1} - 1}{s_k} (x_k - x_{k-1})$
     - Lặp giảm $t_k$ để tìm $x_{new} = \text{prox}_{t_k\lambda} (y_k - t_k \nabla f(y_k))$ thỏa mãn:
       $$f(x_{new}) \le f(y_k) + \nabla f(y_k)^T (x_{new} - y_k) + \frac{1}{2t_k} \Vert x_{new} - y_k \Vert_2^2$$
+      > **Ghi chú về Hiệu năng:** Khác với NAG Smooth, vì $x_{new}$ được sinh ra từ toán tử `prox` nên ta KHÔNG THỂ rút gọn biểu thức $(x_{new} - y)$ thành $-t \nabla f(y)$. Máy tính bắt buộc phải tính tích vô hướng $O(d)$ ở mọi bước lặp thử $t$.
     - Sau khi chốt được $t_k$, cập nhật dãy gia tốc cho bước kế tiếp:
       $$s_{k+1} = \frac{1 + \sqrt{1 + 4s_k^2 \frac{t_k}{t_{k-1}}}}{2}$$
 

@@ -11,15 +11,16 @@ DATA_DIR="data"
 OUT_DIR="runs"
 
 python -m scripts.train \
-  --loss bce \
+  --loss weighted_bce \
+  --w-pos 5.15 \
   --reg l2 \
   --lam 1e-2 \
   --optimizer newton \
   --lr 1e-2 \
-  --backtracking \
+  --backtracking 1 \
   --alpha0 1.0 \
   --lr-schedule fixed \
-  --epochs 50 \
+  --epochs 100 \
   --batch-size 256 \
   --seed 42 \
   --log-every-iters 50 \
