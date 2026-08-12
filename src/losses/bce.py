@@ -1,53 +1,47 @@
 """
 bce.py — Binary Cross-Entropy (BCE) loss.
 
-Loss:     L(w) = -(1/n) Σ [ y_i log(σ(z_i)) + (1-y_i) log(1-σ(z_i)) ]
-Gradient: ∇L(w) = (1/n) X^T (σ(z) - y)
-Hessian:  H(w)  = (1/n) X^T diag(σ(z) * (1-σ(z))) X
+Logit-based interface: z = X @ w + b (pre-sigmoid logits), y in {0, 1}.
 
-where z = X @ w  and  σ is the sigmoid function.
+Loss:     L(z, y) = -(1/n) Σ [ y_i * log(σ(z_i)) + (1-y_i) * log(1-σ(z_i)) ]
+Gradient: ∇L/∂z   = σ(z) - y
+Hessian:  ∂²L/∂z² = diag(σ(z) * (1-σ(z)))
 
 Numerical stability:
-  log(σ(z)) = -log(1 + exp(-z))   [use log-sum-exp trick internally]
+  log(σ(z)) = -log(1 + exp(-z))   [use logaddexp trick]
 """
 
 import numpy as np
-from src.utils import sigmoid
+
+
+def _sigmoid(z):
+    """Numerically stable sigmoid."""
+    out = np.empty_like(z, dtype=np.float64)
+    pos = z >= 0
+    out[pos] = 1.0 / (1.0 + np.exp(-z[pos]))
+    exp_z = np.exp(z[~pos])
+    out[~pos] = exp_z / (1.0 + exp_z)
+    return out
 
 
 class BCELoss:
-    """Binary Cross-Entropy loss with analytic gradient and Hessian."""
+    """Standard binary cross-entropy. Convex and smooth in z."""
 
     name = "bce"
 
-    def __call__(
-        self,
-        w: np.ndarray,
-        X: np.ndarray,
-        y: np.ndarray,
-    ) -> float:
-        return self.loss(w, X, y)
+    def value(self, z, y):
+        p = _sigmoid(z)
+        eps = 1e-12
+        p = np.clip(p, eps, 1 - eps)
+        return float(np.mean(-(y * np.log(p) + (1 - y) * np.log(1 - p))))
 
-    def loss(self, w: np.ndarray, X: np.ndarray, y: np.ndarray) -> float:
-        """Compute BCE loss (scalar)."""
-        z = X @ w
-        # Numerically stable: log σ(z) = -log(1+exp(-z)) = -softplus(-z)
-        log_p  = -np.logaddexp(0, -z)          # log σ(z)
-        log_1p = -np.logaddexp(0, z)           # log(1 - σ(z))
-        return -float(np.mean(y * log_p + (1 - y) * log_1p))
+    def grad(self, z, y):
+        p = _sigmoid(z)
+        return p - y
 
-    def gradient(self, w: np.ndarray, X: np.ndarray, y: np.ndarray) -> np.ndarray:
-        """Compute gradient ∇L(w) = (1/n) X^T (σ(z) - y)."""
-        z = X @ w
-        residuals = sigmoid(z) - y
-        return X.T @ residuals / X.shape[0]
+    def hessian(self, z, y):
+        p = _sigmoid(z)
+        return p * (1 - p)
 
-    def hessian(self, w: np.ndarray, X: np.ndarray, y: np.ndarray) -> np.ndarray:
-        """Compute Hessian H(w) = (1/n) X^T diag(s*(1-s)) X."""
-        z = X @ w
-        s = sigmoid(z)
-        D = s * (1 - s)                   # shape (n,)
-        return (X.T * D) @ X / X.shape[0]
-
-    def __repr__(self) -> str:
+    def __repr__(self):
         return "BCELoss()"

@@ -1,5 +1,5 @@
 """
-nag.py — Nesterov Accelerated Gradient (NAG) descent.
+Nesterov Accelerated Gradient (NAG) descent.
 
 Standard momentum update (Heavy Ball):
     v_{t+1} = μ * v_t - η * ∇f(w_t)
@@ -9,9 +9,6 @@ Nesterov's correction: evaluate the gradient at the "lookahead" point:
     y_t      = w_t + μ * v_t              (lookahead point)
     v_{t+1}  = μ * v_t - η * ∇f(y_t)
     w_{t+1}  = w_t + v_{t+1}
-
-Equivalently (Sutskever formulation, used here):
-    w_{t+1} = w_t + μ * v_t - η * ∇f(w_t + μ * v_t)
 
 Proximal variant for L1 (ISTA/FISTA-style):
     y_t     = w_t + μ * v_t
@@ -28,65 +25,57 @@ from src.optimizers.base import BaseOptimizer
 
 
 class NAG(BaseOptimizer):
-    """
-    Nesterov Accelerated Gradient descent.
-
-    Parameters
-    ----------
-    step_size    : FixedLR | ArmijoLineSearch instance
-    momentum     : momentum coefficient μ ∈ [0, 1)  (default 0.9)
-    regularizer  : L1Regularizer | None (L2 handled in grad_fn)
-    use_proximal : True when regularizer is L1
-    """
+    """Nesterov Accelerated Gradient descent."""
 
     name = "nag"
 
-    def __init__(
-        self,
-        step_size,
-        momentum: float = 0.9,
-        regularizer=None,
-        use_proximal: bool = False,
-    ):
+    def __init__(self, step_size, momentum: float = 0.9, regularizer=None, use_proximal: bool = False):
         self.step_size = step_size
         self.momentum = momentum
         self.regularizer = regularizer
         self.use_proximal = use_proximal
-        self._v = None   # velocity vector; initialized on first step
+        self._v = None
+        self._vb = 0.0
 
-    def step(self, w, loss_fn, grad_fn, X, y, **kwargs) -> np.ndarray:
+    def lookahead(self, w, b):
+        """Return Nesterov lookahead point for gradient evaluation."""
+        if self._v is None:
+            return w, b
+        y_look = w + self.momentum * self._v
+        y_look_b = b + self.momentum * self._vb
+        return y_look, y_look_b
+
+    def step(self, w, b, grad_w, grad_b, **kwargs):
         if self._v is None:
             self._v = np.zeros_like(w)
-
-        mu = self.momentum
-        # Lookahead point
-        y_look = w + mu * self._v
-
-        grad = grad_fn(y_look, X, y)
+            self._vb = 0.0
 
         if hasattr(self.step_size, "search"):
-            # Armijo at the lookahead point
-            eta = self.step_size.search(
-                y_look, grad,
-                loss_fn=lambda _w: loss_fn(_w, X, y),
-            )
+            obj_fn = kwargs.get("obj_fn")
+            y_look, y_look_b = self.lookahead(w, b)
+            eta = self.step_size.search(y_look, y_look_b, grad_w, grad_b, obj_fn)
         else:
-            eta = self.step_size.step()
+            eta = self.step_size.lr
+            self.step_size.step()
 
-        w_half = y_look - eta * grad
+        y_look, y_look_b = self.lookahead(w, b)
+        w_half = y_look - eta * grad_w
+        b_new = y_look_b - eta * grad_b
+
         if self.use_proximal and self.regularizer is not None:
-            w_new = self.regularizer.proximal(w_half, eta)
+            w_new = self.regularizer.prox(w_half, eta)
         else:
             w_new = w_half
 
         self._v = w_new - w
-        return w_new
+        self._vb = b_new - b
+        return w_new, b_new
 
-    def reset(self) -> None:
-        self._v = None
-        if hasattr(self.step_size, "reset"):
-            self.step_size.reset()
+    def reset(self, w_shape):
+        self._v = np.zeros(w_shape)
+        self._vb = 0.0
+        self.step_size.reset()
 
-    def __repr__(self) -> str:
-        return (f"NAG(momentum={self.momentum}, "
-                f"step_size={self.step_size}, proximal={self.use_proximal})")
+    def __repr__(self):
+        return f"NAG(momentum={self.momentum}, step_size={self.step_size}, proximal={self.use_proximal})"
+

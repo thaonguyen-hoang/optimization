@@ -1,37 +1,27 @@
 """
 weighted_bce.py — Weighted Binary Cross-Entropy loss.
 
-Applies per-sample class weights to address class imbalance:
-
-    L(w) = -(1/N) Σ [ w_pos * y_i * log(p_i) + w_neg * (1-y_i) * log(1-p_i) ]
-
-where:
-    p_i = σ(z_i),  z_i = x_i^T w
-    w_pos = c_scale * R,   R = N_neg / N_pos   (computed from training data)
-    w_neg = 1.0            (fixed)
-
-The weight vector is broadcast over the sample dimension.
-
-Gradient:
-    ∇L(w) = (1/N) X^T diag(weights) (σ(z) - y)
-    where weights_i = w_pos if y_i=1 else w_neg
-
-Hessian:
-    H(w) = (1/N) X^T diag(weights * s * (1-s)) X
+Logit-based interface: z = X @ w + b (pre-sigmoid logits), y in {0, 1}.
+Applies per-sample class weights to address class imbalance.
 """
 
 import numpy as np
-from src.utils import sigmoid
+
+
+def _sigmoid(z):
+    out = np.empty_like(z, dtype=np.float64)
+    pos = z >= 0
+    out[pos] = 1.0 / (1.0 + np.exp(-z[pos]))
+    exp_z = np.exp(z[~pos])
+    out[~pos] = exp_z / (1.0 + exp_z)
+    return out
 
 
 class WeightedBCELoss:
-    """
-    Weighted Binary Cross-Entropy loss.
+    """Cost-sensitive BCE: scales each example's loss by its class weight.
 
-    Parameters
-    ----------
-    w_pos : weight for positive class (y=1), typically c_scale * R
-    w_neg : weight for negative class (y=0), typically 1.0
+    w_pos, w_neg: e.g. inverse class frequency, or a chosen cost ratio.
+    Still convex: a positive-weighted sum of convex terms is convex.
     """
 
     name = "weighted_bce"
@@ -40,33 +30,22 @@ class WeightedBCELoss:
         self.w_pos = w_pos
         self.w_neg = w_neg
 
-    def _sample_weights(self, y: np.ndarray) -> np.ndarray:
-        """Return per-sample weight vector based on class membership."""
-        return np.where(y == 1, self.w_pos, self.w_neg)
+    def value(self, z, y):
+        p = _sigmoid(z)
+        eps = 1e-12
+        p = np.clip(p, eps, 1 - eps)
+        w = np.where(y == 1, self.w_pos, self.w_neg)
+        return float(np.mean(w * -(y * np.log(p) + (1 - y) * np.log(1 - p))))
 
-    def __call__(self, w, X, y):
-        return self.loss(w, X, y)
+    def grad(self, z, y):
+        p = _sigmoid(z)
+        w = np.where(y == 1, self.w_pos, self.w_neg)
+        return w * (p - y)
 
-    def loss(self, w: np.ndarray, X: np.ndarray, y: np.ndarray) -> float:
-        z = X @ w
-        log_p  = -np.logaddexp(0, -z)
-        log_1p = -np.logaddexp(0, z)
-        sample_w = self._sample_weights(y)
-        return -float(np.mean(sample_w * (y * log_p + (1 - y) * log_1p)))
+    def hessian(self, z, y):
+        p = _sigmoid(z)
+        w = np.where(y == 1, self.w_pos, self.w_neg)
+        return w * p * (1 - p)
 
-    def gradient(self, w: np.ndarray, X: np.ndarray, y: np.ndarray) -> np.ndarray:
-        z = X @ w
-        s = sigmoid(z)
-        sample_w = self._sample_weights(y)
-        residuals = sample_w * (s - y)
-        return X.T @ residuals / X.shape[0]
-
-    def hessian(self, w: np.ndarray, X: np.ndarray, y: np.ndarray) -> np.ndarray:
-        z = X @ w
-        s = sigmoid(z)
-        sample_w = self._sample_weights(y)
-        D = sample_w * s * (1 - s)
-        return (X.T * D) @ X / X.shape[0]
-
-    def __repr__(self) -> str:
+    def __repr__(self):
         return f"WeightedBCELoss(w_pos={self.w_pos}, w_neg={self.w_neg})"

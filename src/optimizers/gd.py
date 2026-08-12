@@ -1,5 +1,5 @@
 """
-gd.py — Gradient Descent (full-batch).
+Gradient Descent (full-batch).
 
 Update rule:
     w_{t+1} = w_t - η * ∇f(w_t)
@@ -18,18 +18,7 @@ from src.optimizers.base import BaseOptimizer
 
 
 class GradientDescent(BaseOptimizer):
-    """
-    Full-batch Gradient Descent with optional proximal step for L1.
-
-    Parameters
-    ----------
-    step_size   : FixedLR | ArmijoLineSearch instance
-    regularizer : L1Regularizer | L2Regularizer | None
-                  (L2 gradient is already added inside grad_fn by the model;
-                   L1 proximal operator is applied here explicitly)
-    use_proximal: if True, apply soft-thresholding after the gradient step
-                  (must be True when regularizer is L1)
-    """
+    """Full-batch Gradient Descent with optional proximal step for L1."""
 
     name = "gd"
 
@@ -38,30 +27,25 @@ class GradientDescent(BaseOptimizer):
         self.regularizer = regularizer
         self.use_proximal = use_proximal
 
-    def step(self, w, loss_fn, grad_fn, X, y, **kwargs) -> np.ndarray:
-        grad = grad_fn(w, X, y)
-
+    def step(self, w, b, grad_w, grad_b, **kwargs):
         if hasattr(self.step_size, "search"):
-            # Armijo backtracking
-            eta = self.step_size.search(
-                w, grad,
-                loss_fn=lambda _w: loss_fn(_w, X, y),
-            )
+            obj_fn = kwargs.get("obj_fn")
+            eta = self.step_size.search(w, b, grad_w, grad_b, obj_fn)
         else:
-            # Fixed LR (advances internal step counter)
-            eta = self.step_size.step()
+            eta = self.step_size.lr
+            self.step_size.step()
 
-        w_new = w - eta * grad
+        w_new = w - eta * grad_w
+        b_new = b - eta * grad_b
 
         if self.use_proximal and self.regularizer is not None:
-            w_new = self.regularizer.proximal(w_new, eta)
+            w_new = self.regularizer.prox(w_new, eta)
 
-        return w_new
+        return w_new, b_new
 
-    def reset(self) -> None:
-        if hasattr(self.step_size, "reset"):
-            self.step_size.reset()
+    def reset(self, w_shape):
+        self.step_size.reset()
 
-    def __repr__(self) -> str:
-        return (f"GradientDescent(step_size={self.step_size}, "
-                f"proximal={self.use_proximal})")
+    def __repr__(self):
+        return f"GradientDescent(step_size={self.step_size}, proximal={self.use_proximal})"
+

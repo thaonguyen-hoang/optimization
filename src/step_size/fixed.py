@@ -1,5 +1,5 @@
 """
-fixed.py — Fixed learning rate strategy.
+Fixed learning rate strategy.
 
 The learning rate is set to η = c / L where:
   c  : scaling constant from YAML config
@@ -11,15 +11,7 @@ For SGD an optional multiplicative decay schedule is applied:
 
 
 class FixedLR:
-    """
-    Fixed learning rate with optional inverse-time decay.
-
-    Parameters
-    ----------
-    c          : numerator constant (from YAML sweep)
-    L          : Lipschitz constant (computed at runtime)
-    decay_rate : decay rate for SGD schedule (0.0 = no decay)
-    """
+    """Fixed learning rate with optional inverse-time decay."""
 
     def __init__(self, c: float, L: float, decay_rate: float = 0.0):
         if L <= 0:
@@ -29,19 +21,17 @@ class FixedLR:
         self._step = 0
 
     @property
-    def lr(self) -> float:
+    def lr(self):
         """Current learning rate (accounts for decay)."""
         return self.eta0 / (1.0 + self.decay_rate * self._step)
 
-    def step(self) -> float:
-        """Return current LR then advance the internal step counter."""
-        current = self.lr
+    def step(self):
+        """Advance the internal step counter."""
         self._step += 1
-        return current
 
-    def reset(self) -> None:
+    def reset(self):
         self._step = 0
 
-    def __repr__(self) -> str:
-        return (f"FixedLR(eta0={self.eta0:.6g}, "
-                f"decay_rate={self.decay_rate})")
+    def __repr__(self):
+        return f"FixedLR(eta0={self.eta0:.6g}, decay_rate={self.decay_rate})"
+

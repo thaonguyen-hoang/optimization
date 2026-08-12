@@ -6,12 +6,6 @@ applicable, and binary labels y ∈ {0, 1}.
 """
 
 import numpy as np
-from sklearn.metrics import (
-    roc_auc_score,
-    average_precision_score,
-    precision_recall_curve,
-    roc_curve,
-)
 
 
 def compute_metrics(
@@ -22,15 +16,7 @@ def compute_metrics(
     """
     Compute a standard suite of binary classification metrics.
 
-    Parameters
-    ----------
-    y_true    : ground-truth labels, shape (n,), values in {0, 1}
-    y_prob    : predicted probabilities for class 1, shape (n,)
-    threshold : decision threshold for converting probabilities to labels
-
-    Returns
-    -------
-    dict with keys: auroc, auprc, f1, precision, recall, accuracy
+    Returns: dict with keys: auroc, auprc, f1, precision, recall, accuracy
     """
     y_pred = (y_prob >= threshold).astype(int)
 
@@ -45,12 +31,9 @@ def compute_metrics(
                  if (precision + recall) > 0 else 0.0)
     accuracy  = (tp + tn) / len(y_true)
 
-    auroc = roc_auc_score(y_true, y_prob)
-    auprc = average_precision_score(y_true, y_prob)
-
     return {
-        "auroc":     float(auroc),
-        "auprc":     float(auprc),
+        "auroc":     auroc(y_true, y_prob),
+        "auprc":     auprc(y_true, y_prob),
         "f1":        float(f1),
         "precision": float(precision),
         "recall":    float(recall),
@@ -59,5 +42,39 @@ def compute_metrics(
 
 
 def auroc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
-    """Convenience wrapper returning only the AUROC scalar."""
-    return float(roc_auc_score(y_true, y_prob))
+    """AUROC via Mann-Whitney U with midrank tie handling, no sklearn."""
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
+    n_pos = np.sum(y_true == 1)
+    n_neg = np.sum(y_true == 0)
+    if n_pos == 0 or n_neg == 0:
+        return float("nan")
+
+    order = np.argsort(y_prob)
+    p_sorted = y_prob[order]
+    unique_vals, idx, counts = np.unique(p_sorted, return_inverse=True, return_counts=True)
+    midranks = np.cumsum(counts) - (counts - 1) / 2.0
+    ranks = midranks[idx]
+
+    orig_ranks = np.empty_like(ranks)
+    orig_ranks[order] = ranks
+
+    sum_ranks_pos = np.sum(orig_ranks[y_true == 1])
+    auc = (sum_ranks_pos - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
+    return float(auc)
+
+
+def auprc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
+    """Precision-recall AUC via trapezoidal rule over sorted thresholds."""
+    order = np.argsort(-y_prob)
+    y_sorted = y_true[order]
+    tp_cum = np.cumsum(y_sorted == 1)
+    fp_cum = np.cumsum(y_sorted == 0)
+    n_pos = np.sum(y_true == 1)
+    precision = tp_cum / (tp_cum + fp_cum)
+    recall = tp_cum / n_pos if n_pos > 0 else np.zeros_like(tp_cum, dtype=float)
+    recall = np.concatenate(([0.0], recall))
+    precision = np.concatenate(([1.0], precision))
+    _trapz = getattr(np, "trapezoid", None) or np.trapz
+    return float(_trapz(precision, recall))
+

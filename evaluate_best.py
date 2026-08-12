@@ -4,17 +4,12 @@ evaluate_best.py — Final test-set evaluation of the best config per loss.
 For each loss function, this script:
   1. Reads all per-run JSON files in results/.
   2. Selects the config with the highest best_val_auroc per loss.
-  3. Re-trains that config on train+val data (optional) or uses saved weights.
+  3. Re-trains that config on train+val data using inline training loop.
   4. Evaluates on the held-out test set.
   5. Prints and saves a summary table.
 
 Usage:
     python evaluate_best.py --data_dir data/processed --results_dir results
-
-Note: Since results JSON files don't store the final weights (only metrics and
-curves), the best config is re-trained from scratch on train data and then
-evaluated on test.  If you want to avoid re-training, save `model.w_` in
-runner.py results.
 """
 
 import argparse
@@ -41,7 +36,7 @@ from src.optimizers.sgd import SGD
 from src.optimizers.nag import NAG
 from src.optimizers.newton import Newton
 from src.optimizers.lbfgs import LBFGS
-from src.model import LogisticRegression
+from runner import train_logreg
 
 logger = get_logger("evaluate_best")
 
@@ -49,12 +44,8 @@ LOSS_NAMES = ["bce", "weighted_bce", "squared_hinge", "focal"]
 
 
 def find_best_per_loss(results_dir: Path) -> dict[str, dict]:
-    """
-    Scan all JSON result files and return the best run per loss
-    (by best_val_auroc).
-    """
+    """Scan all JSON result files and return the best run per loss (by best_val_auroc)."""
     best = {}
-    # Use rglob to search recursively in subdirectories (e.g. results/A, results/D_controlled)
     for jf in results_dir.rglob("*.json"):
         with open(jf) as f:
             r = json.load(f)
@@ -103,9 +94,15 @@ def rebuild_and_evaluate(best_run: dict, X_train, y_train, X_val, y_val,
 
     # Build step size
     if step_type == "fixed":
-        step_size = FixedLR(c=c_val, L=L, decay_rate=decay_rate)
+        L_eff = 1.0 if opt_name == "newton" else L
+        step_size = FixedLR(c=c_val, L=L_eff, decay_rate=decay_rate)
     else:
-        step_size = ArmijoLineSearch(alpha_init=1.0, beta=0.5, c_armijo=1e-4)
+        bt_cfg = best_run.get("hyperparams", {}).get("backtracking", {})
+        step_size = ArmijoLineSearch(
+            alpha_init=bt_cfg.get("alpha_init", 1.0),
+            beta=bt_cfg.get("beta", 0.5),
+            c_armijo=bt_cfg.get("c_armijo", 1e-4),
+        )
 
     # Build optimizer
     use_proximal = (reg_type == "l1")
@@ -119,26 +116,30 @@ def rebuild_and_evaluate(best_run: dict, X_train, y_train, X_val, y_val,
     elif opt_name == "newton":
         optimizer = Newton(step_size, epsilon_damp=1e-6)
     elif opt_name == "lbfgs":
-        optimizer = LBFGS(maxiter=1, m=10)
+        optimizer = LBFGS(step_size, m=10)
     else:
         raise ValueError(f"Unknown optimizer: {opt_name}")
 
-    model = LogisticRegression(
-        loss_fn=loss_fn,
-        optimizer=optimizer,
-        regularizer=regularizer,
-        reg_type=reg_type,
-        max_epochs=best_run.get("epochs_run", 1000),
-        tol_obj=1e-6,
-        patience_inner=5,
+    # Train using inline training loop
+    result = train_logreg(
+        X_train, y_train, X_val, y_val,
+        loss_fn, optimizer, regularizer,
+        n_epochs=best_run.get("epochs_run", 1000),
         batch_size=batch_size,
         seed=cfg_seed,
-        verbose=0,
+        verbose_every=0,
+        tol_obj=1e-6,
+        patience_inner=5,
+        patience_outer=10,
+        dry_run=False,
     )
-    model.fit(X_train, y_train, X_val, y_val)
 
-    test_metrics = compute_metrics(y_test, model.predict_proba(X_test))
-    val_metrics  = compute_metrics(y_val,  model.predict_proba(X_val))
+    w, b = result["w"], result["b"]
+    z_val = X_val @ w + b
+    z_test = X_test @ w + b
+
+    test_metrics = compute_metrics(y_test, sigmoid(z_test))
+    val_metrics  = compute_metrics(y_val,  sigmoid(z_val))
     return {
         "loss_fn":    loss_name,
         "optimizer":  opt_name,

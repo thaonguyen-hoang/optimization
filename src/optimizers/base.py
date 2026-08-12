@@ -1,51 +1,46 @@
 """
-base.py — Abstract base class for all optimizers.
+Base class for optimizers.
 
-Every optimizer must implement `step()`, which performs a single
-parameter update given the current parameters, loss function, and data.
+Interface:
+    opt.step(w, b, grad_w, grad_b, **kwargs) -> new_w, new_b
+
+Optional attributes:
+    - lookahead(w, b) -> (w_eval, b_eval): Nesterov lookahead point
+    - requires_hessian: bool (Newton needs joint Hessian in kwargs)
+    - requires_obj_fn: bool (backtracking needs callable objective)
+    - requires_prox_fn: bool (backtracking needs proximal operator)
+    - handles_prox: bool (optimizer manages prox internally)
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
 import numpy as np
 
 
 class BaseOptimizer(ABC):
-    """
-    Abstract base class for gradient-based optimizers.
-
-    All optimizers share a common interface:
-      - `step(w, loss_fn, grad_fn, X, y)` → updated w
-      - `reset()` → reset any internal state (e.g. momentum)
-    """
+    """Abstract base class for optimizers."""
 
     name: str = "base"
 
     @abstractmethod
-    def step(
-        self,
-        w: np.ndarray,
-        loss_fn,
-        grad_fn,
-        X: np.ndarray,
-        y: np.ndarray,
-        **kwargs: Any,
-    ) -> np.ndarray:
-        """
-        Perform one optimization step.
+    def step(self, w, b, grad_w, grad_b, **kwargs):
+        """Perform one optimization step.
 
         Parameters
         ----------
-        w        : current parameter vector, shape (d,)
-        loss_fn  : callable (w, X, y) → scalar
-        grad_fn  : callable (w, X, y) → ndarray of shape (d,)
-        X        : feature matrix, shape (n, d)
-        y        : label vector, shape (n,)
+        w, b       : current parameters
+        grad_w     : gradient w.r.t. w
+        grad_b     : gradient w.r.t. b
+        **kwargs   : optional (hess_joint, obj_fn, prox_fn)
 
         Returns
         -------
-        w_new : updated parameter vector, shape (d,)
+        new_w, new_b : updated parameters
         """
 
-    def reset(self) -> None:
-        """Reset internal state (called at the start of each run)."""
+    def reset(self, w_shape):
+        """Reset internal state at start of each run."""
+
+    def lookahead(self, w, b):
+        """Return evaluation point for gradient (e.g., Nesterov lookahead)."""
+        return w, b
+

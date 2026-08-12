@@ -95,25 +95,25 @@ class FocalLoss:
         a_t = np.where(y == 1, self.alpha, 1.0 - self.alpha)
         return p_t, a_t
 
-    def __call__(self, w, X, y):
-        return self.loss(w, X, y)
+    def __call__(self, w, b, X, y):
+        return self.loss(w, b, X, y)
 
-    def loss(self, w: np.ndarray, X: np.ndarray, y: np.ndarray) -> float:
+    def loss(self, w: np.ndarray, b: float, X: np.ndarray, y: np.ndarray) -> float:
         """Compute focal loss (scalar)."""
-        z = X @ w
+        z = X @ w + b
         s = sigmoid(z)
         p_t, a_t = self._pt_and_alpha(s, y)
         focal_weight = (1.0 - p_t) ** self.gamma
         return -float(np.mean(a_t * focal_weight * np.log(p_t + _EPS)))
 
-    def gradient(self, w: np.ndarray, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+    def gradient(self, w: np.ndarray, b: float, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float]:
         """
-        Compute gradient ∇L(w) using the per-sample chain rule.
+        Compute gradient ∇L(w), ∇L(b) using the per-sample chain rule.
 
         d(FL_i)/dz_i is derived from the chain rule:
             d(FL_i)/dz_i = d(FL_i)/dp_t * dp_t/ds * ds/dz
         """
-        z = X @ w
+        z = X @ w + b
         s = sigmoid(z)                          # σ(z), shape (n,)
         p_t, a_t = self._pt_and_alpha(s, y)
         g = self.gamma
@@ -122,10 +122,11 @@ class FocalLoss:
         fw  = (1.0 - p_t) ** g                  # (1-p_t)^γ
         log_pt = np.log(p_t + _EPS)
 
-        # d(FL)/dp_t = -a_t * [ γ*(1-p_t)^(γ-1)*(-1)*log(p_t) + (1-p_t)^γ / p_t ]
-        #            = a_t * [ γ*(1-p_t)^(γ-1)*log(p_t) - fw/p_t ]
+        # Fix instability when g < 1 and p_t approaches 1.0
+        one_minus_pt = np.clip(1.0 - p_t, _EPS, 1.0)
+        
         if g > 0:
-            dFL_dpt = a_t * (g * (1.0 - p_t) ** (g - 1) * log_pt - fw / (p_t + _EPS))
+            dFL_dpt = a_t * (g * (one_minus_pt) ** (g - 1.0) * log_pt - fw / (p_t + _EPS))
         else:
             # γ=0: reduces to weighted BCE; first term vanishes
             dFL_dpt = -a_t * fw / (p_t + _EPS)
@@ -136,9 +137,11 @@ class FocalLoss:
         # ds/dz = s*(1-s)
         dFL_dz = dFL_dpt * dpt_ds * s * (1.0 - s)   # shape (n,)
 
-        return X.T @ dFL_dz / X.shape[0]
+        grad_w = X.T @ dFL_dz / X.shape[0]
+        grad_b = float(np.sum(dFL_dz) / X.shape[0])
+        return grad_w, grad_b
 
-    def hessian(self, w, X, y):
+    def hessian(self, w, b, X, y):
         raise NotImplementedError(
             "Focal loss Hessian is not implemented. "
             "Newton's method is not used with focal loss."

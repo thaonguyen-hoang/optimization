@@ -1,38 +1,35 @@
 """
-l2.py — L2 (Ridge) regularization.
+L2 (Ridge) regularization: (λ/2) * ||w||_2^2
 
-Penalty:   R(w) = (λ/2) * ||w||²
-Gradient:  ∇R(w) = λ * w
-
-The bias term (last element of w if bias is appended, or separate scalar)
-is typically NOT regularized.  This module regularizes all elements of w;
-the caller is responsible for zeroing out the bias gradient if needed.
+Smooth + convex; makes the total objective STRONGLY convex when added
+to a convex loss -> improves conditioning, gives linear convergence
+rate guarantees for GD.
 """
 
 import numpy as np
 
 
 class L2Regularizer:
-    """
-    L2 (Ridge) regularization.
+    """L2 (Ridge) regularization: (λ/2) * ||w||_2^2."""
 
-    Parameters
-    ----------
-    lambda_reg : regularization strength λ ≥ 0
-    """
+    def __init__(self, lam: float = 1e-2):
+        self.lam = lam
 
-    def __init__(self, lambda_reg: float):
-        if lambda_reg < 0:
-            raise ValueError(f"lambda_reg must be ≥ 0, got {lambda_reg}")
-        self.lambda_reg = lambda_reg
+    def penalty(self, w):
+        """L(w) = (λ/2) * ||w||_2^2"""
+        return 0.5 * self.lam * float(np.sum(w ** 2))
 
-    def penalty(self, w: np.ndarray) -> float:
-        """R(w) = (λ/2) ||w||²"""
-        return 0.5 * self.lambda_reg * float(np.dot(w, w))
+    def grad(self, w):
+        """∇L(w) = λ * w"""
+        return self.lam * w
 
-    def gradient(self, w: np.ndarray) -> np.ndarray:
-        """∇R(w) = λ w"""
-        return self.lambda_reg * w
+    def prox(self, w, lr):
+        """No non-smooth part; prox is identity."""
+        return w
 
-    def __repr__(self) -> str:
-        return f"L2Regularizer(lambda={self.lambda_reg})"
+    def hessian(self, w):
+        """Hessian is λ * I (diagonal)."""
+        return self.lam * np.ones_like(w)
+
+    def __repr__(self):
+        return f"L2Regularizer(lam={self.lam})"
