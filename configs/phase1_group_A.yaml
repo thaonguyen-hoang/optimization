@@ -1,0 +1,63 @@
+group: A
+description: >
+  Optimizer comparison — which optimizer converges fastest in epochs
+  and wall-clock time? Fixed BCE, L2 (λ=0.01), fixed step size.
+
+max_epochs: 500
+tol_obj: 1.0e-6
+patience_inner: 5
+patience_outer: 20
+seed: 42
+newton_epsilon_damp: 1.0e-6
+
+# Armijo params (used only if a run specifies step: backtracking)
+step_size:
+  backtracking:
+    alpha_init: 1.0
+    beta: 0.5
+    c_armijo: 1.0e-4
+
+# ── Explicit runs ──────────────────────────────────────────────────────────────
+# c for GD/NAG/Newton: η = c / L  (Newton: η = c directly, L treated as 1)
+# c for SGD:           η = c / L  where c is in the much smaller SGD range
+runs:
+  - id: A1
+    loss: bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0          # η = 1/L  — theoretically optimal for L-smooth GD
+
+  - id: A2
+    loss: bce
+    optimizer: nag
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0          # same step as GD; NAG uses momentum to accelerate
+
+  - id: A3
+    loss: bce
+    optimizer: sgd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 0.01         # SGD needs smaller c (stochastic noise; see plan §HP)
+    batch_size: 64
+    decay_rate: 0.001
+
+  - id: A4
+    loss: bce
+    optimizer: newton
+    reg: l2
+    lambda: 0.01
+    step: backtracking   # damped Newton — globally convergent
+
+  - id: A5
+    loss: bce
+    optimizer: lbfgs
+    reg: l2
+    lambda: 0.01
+    step: backtracking   # L-BFGS uses scipy Wolfe internally
+    lbfgs_maxiter: 1     # 1 quasi-Newton step per "epoch" for fair epoch comparison

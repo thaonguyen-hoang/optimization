@@ -1,0 +1,55 @@
+# configs/bce.yaml — Binary Cross-Entropy experiment configuration
+
+loss: bce
+
+# ── Training ────────────────────────────────────────────────────────────────
+max_epochs: 1000
+tol_obj: 1.0e-6
+patience_inner: 5    # consecutive tol_obj steps to trigger Level-1 early stop
+patience_outer: 20   # val AUROC no-improvement epochs to trigger Level-2 stop
+seed: 42
+
+# ── Optimizers to sweep ──────────────────────────────────────────────────────
+optimizers:
+  - gd
+  - sgd
+  - nag
+  - newton
+  - lbfgs
+
+# ── Regularization to sweep ──────────────────────────────────────────────────
+regularizations:
+  - none
+  - l2
+  - l1         # GD/SGD/NAG use proximal; Newton/LBFGS skip
+
+# ── Step size ────────────────────────────────────────────────────────────────
+step_size:
+  fixed:
+    # c values for GD and NAG:  η = c / L
+    c_gd_nag: [0.1, 0.5, 1.0, 1.5, 1.9]
+    # c values for SGD:  η = c / L  (smaller to account for stochastic noise)
+    c_sgd: [1.0e-4, 1.0e-3, 0.01, 0.05, 0.1]
+    # SGD learning rate decay: η_t = η_0 / (1 + decay * t)
+    sgd_decay_rate: [0.0, 0.001, 0.01]   # 0.0 = no decay
+  backtracking:
+    alpha_init: 1.0
+    beta: 0.5
+    c_armijo: 1.0e-4
+
+# ── Newton method ────────────────────────────────────────────────────────────
+newton:
+  epsilon_damp: 1.0e-6   # H_damp = H + ε * I  for numerical stability
+
+# ── L-BFGS ──────────────────────────────────────────────────────────────────
+lbfgs:
+  maxiter: 1     # 1 quasi-Newton step per epoch (for fair epoch comparison)
+  m: 10          # number of vector pairs (history size)
+
+# ── Regularization strengths ─────────────────────────────────────────────────
+regularization:
+  lambda: [1.0e-4, 1.0e-3, 0.01, 0.1]
+
+# ── SGD batch sizes ───────────────────────────────────────────────────────────
+sgd:
+  batch_sizes: [1, 32, 64]   # 1 = true stochastic SGD

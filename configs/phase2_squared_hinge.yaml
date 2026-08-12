@@ -1,0 +1,85 @@
+group: D_best_squared_hinge
+description: >
+  Best-effort sweep for Squared Hinge loss — find the best (optimizer, reg)
+  for this loss independently. No loss-specific HPs to sweep.
+
+max_epochs: 500
+tol_obj: 1.0e-6
+patience_inner: 5
+patience_outer: 20
+seed: 42
+newton_epsilon_damp: 1.0e-6
+
+step_size:
+  backtracking:
+    alpha_init: 1.0
+    beta: 0.5
+    c_armijo: 1.0e-4
+
+# ── Explicit runs ──────────────────────────────────────────────────────────────
+# Step 1: Optimizer candidates — fix L2 λ=0.01
+# Step 2: Regularization candidates — fix best optimizer
+runs:
+  # ── Step 1: Optimizer ────────────────────────────────────────────────────────
+  - id: SqHinge_opt_GD
+    loss: squared_hinge
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+
+  - id: SqHinge_opt_NAG
+    loss: squared_hinge
+    optimizer: nag
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+
+  - id: SqHinge_opt_Newton
+    loss: squared_hinge
+    optimizer: newton
+    reg: l2
+    lambda: 0.01
+    step: backtracking    # Damped Newton — Hessian available for squared hinge
+
+  - id: SqHinge_opt_LBFGS
+    loss: squared_hinge
+    optimizer: lbfgs
+    reg: l2
+    lambda: 0.01
+    step: backtracking
+    lbfgs_maxiter: 10
+
+  # ── Step 2: Regularization ───────────────────────────────────────────────────
+  - id: SqHinge_reg_none
+    loss: squared_hinge
+    optimizer: gd
+    reg: none
+    step: fixed
+    c: 1.0
+
+  - id: SqHinge_reg_L2_001
+    loss: squared_hinge
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+
+  - id: SqHinge_reg_L2_010
+    loss: squared_hinge
+    optimizer: gd
+    reg: l2
+    lambda: 0.1
+    step: fixed
+    c: 1.0
+
+  - id: SqHinge_reg_L1_001
+    loss: squared_hinge
+    optimizer: gd
+    reg: l1
+    lambda: 0.01
+    step: fixed
+    c: 1.0              # Proximal GD for L1

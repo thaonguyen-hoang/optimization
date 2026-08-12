@@ -1,0 +1,50 @@
+# configs/weighted_bce.yaml — Weighted Binary Cross-Entropy configuration
+
+loss: weighted_bce
+
+max_epochs: 1000
+tol_obj: 1.0e-6
+patience_inner: 5
+patience_outer: 20
+seed: 42
+
+optimizers:
+  - gd
+  - sgd
+  - nag
+  - newton
+  - lbfgs
+
+regularizations:
+  - none
+  - l2
+  - l1
+
+step_size:
+  fixed:
+    c_gd_nag: [0.1, 0.5, 1.0, 1.5, 1.9]
+    c_sgd: [1.0e-4, 1.0e-3, 0.01, 0.05, 0.1]
+    sgd_decay_rate: [0.0, 0.001, 0.01]
+  backtracking:
+    alpha_init: 1.0
+    beta: 0.5
+    c_armijo: 1.0e-4
+
+newton:
+  epsilon_damp: 1.0e-6
+
+lbfgs:
+  maxiter: 1
+  m: 10
+
+regularization:
+  lambda: [1.0e-4, 1.0e-3, 0.01, 0.1]
+
+sgd:
+  batch_sizes: [1, 32, 64]
+
+# ── Weighted BCE: class imbalance handling ────────────────────────────────────
+# R = N_neg / N_pos is computed dynamically from train.csv at runtime.
+# w_pos = c_scale * R,  w_neg = 1.0 (fixed)
+weighted_bce:
+  c_scale: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]

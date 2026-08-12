@@ -1,0 +1,82 @@
+group: C
+description: >
+  Regularization effect — what does regularization do to convergence,
+  generalization, and the Hessian landscape?
+  Fixed: BCE, GD, fixed step c=1.0/L.
+
+max_epochs: 500
+tol_obj: 1.0e-6
+patience_inner: 5
+patience_outer: 20
+seed: 42
+
+step_size:
+  backtracking:
+    alpha_init: 1.0
+    beta: 0.5
+    c_armijo: 1.0e-4
+
+# ── Explicit runs ──────────────────────────────────────────────────────────────
+# λ range: {1e-4, 1e-2, 0.1} — 3 orders of magnitude.
+#   λ < 1e-5: indistinguishable from no-reg
+#   λ > 1:    solution collapses toward w=0 (random classifier)
+# L2 adds λI to Hessian → shifts all eigenvalues up by λ → improves conditioning.
+# L1 uses proximal operator (soft-thresholding) → induces sparsity.
+runs:
+  # ── No regularization ────────────────────────────────────────────────────────
+  - id: C1
+    loss: bce
+    optimizer: gd
+    reg: none
+    step: fixed
+    c: 1.0          # Baseline — may overfit on imbalanced/noisy data
+
+  # ── L2 (Ridge): λ shifts λ_min(H) up by λ ───────────────────────────────────
+  - id: C2
+    loss: bce
+    optimizer: gd
+    reg: l2
+    lambda: 1.0e-4
+    step: fixed
+    c: 1.0          # Weak ridge — almost indistinguishable from C1
+
+  - id: C3
+    loss: bce
+    optimizer: gd
+    reg: l2
+    lambda: 1.0e-2
+    step: fixed
+    c: 1.0          # Moderate ridge — main comparison point
+
+  - id: C4
+    loss: bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.1
+    step: fixed
+    c: 1.0          # Strong ridge — may underfit
+
+  # ── L1 (Lasso / Proximal GD): induces sparsity ───────────────────────────────
+  - id: C5
+    loss: bce
+    optimizer: gd    # GD with proximal operator applied after gradient step
+    reg: l1
+    lambda: 1.0e-4
+    step: fixed
+    c: 1.0          # Weak lasso — few zero weights
+
+  - id: C6
+    loss: bce
+    optimizer: gd
+    reg: l1
+    lambda: 1.0e-2
+    step: fixed
+    c: 1.0          # Moderate lasso — noticeable sparsity
+
+  - id: C7
+    loss: bce
+    optimizer: gd
+    reg: l1
+    lambda: 0.1
+    step: fixed
+    c: 1.0          # Strong lasso — high sparsity, may underfit

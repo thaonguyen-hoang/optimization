@@ -1,0 +1,137 @@
+group: D_best_focal
+description: >
+  Best-effort sweep for Focal loss — find the best (optimizer, reg, γ, α)
+  for this loss independently. Uses anti-correlated (γ, α) pairs so that
+  as focusing increases (γ↑), static balancing decreases (α↓).
+
+max_epochs: 500
+tol_obj: 1.0e-6
+patience_inner: 5
+patience_outer: 20
+seed: 42
+
+step_size:
+  backtracking:
+    alpha_init: 1.0
+    beta: 0.5
+    c_armijo: 1.0e-4
+
+# ── Explicit runs ──────────────────────────────────────────────────────────────
+# Note: Newton is NOT supported for focal (Hessian not implemented).
+# Step 1: Optimizer candidates — fix L2 λ=0.01, default (γ=2.0, α=0.5)
+# Step 2: Regularization candidates — fix best optimizer
+# Step 3: (γ, α) sweep — fix best optimizer+reg
+runs:
+  # ── Step 1: Optimizer ────────────────────────────────────────────────────────
+  - id: Focal_opt_GD
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 2.0
+    alpha: 0.50     # Lin et al. default — neutral starting point
+
+  - id: Focal_opt_NAG
+    loss: focal
+    optimizer: nag
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 2.0
+    alpha: 0.50
+
+  - id: Focal_opt_LBFGS
+    loss: focal
+    optimizer: lbfgs
+    reg: l2
+    lambda: 0.01
+    step: backtracking
+    lbfgs_maxiter: 10
+    gamma: 2.0
+    alpha: 0.50
+
+  # ── Step 2: Regularization ───────────────────────────────────────────────────
+  - id: Focal_reg_none
+    loss: focal
+    optimizer: gd
+    reg: none
+    step: fixed
+    c: 1.0
+    gamma: 2.0
+    alpha: 0.50
+
+  - id: Focal_reg_L2_001
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 2.0
+    alpha: 0.50
+
+  - id: Focal_reg_L2_010
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.1
+    step: fixed
+    c: 1.0
+    gamma: 2.0
+    alpha: 0.50
+
+  # ── Step 3: (γ, α) pair sweep ────────────────────────────────────────────────
+  # Anti-correlated pairs: as γ increases (dynamic focusing), α decreases
+  # (less static weight needed). Reference: Lin et al. (2017), §4.1.
+  - id: Focal_ga_05_075
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 0.5
+    alpha: 0.75     # Low focusing → strong static weight
+
+  - id: Focal_ga_10_065
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 1.0
+    alpha: 0.65
+
+  - id: Focal_ga_20_050
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 2.0
+    alpha: 0.50     # Lin et al. (2017) default
+
+  - id: Focal_ga_30_040
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 3.0
+    alpha: 0.40
+
+  - id: Focal_ga_50_025
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 5.0
+    alpha: 0.25     # High focusing → minimal static weight

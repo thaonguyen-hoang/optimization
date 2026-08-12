@@ -1,0 +1,127 @@
+group: B
+description: >
+  Step size strategy comparison — when does backtracking help?
+  Why is backtracking meaningless for SGD?
+  Fixed: BCE, L2 (λ=0.01).
+
+max_epochs: 300
+tol_obj: 1.0e-6
+patience_inner: 5
+patience_outer: 20
+seed: 42
+newton_epsilon_damp: 1.0e-6
+
+step_size:
+  backtracking:
+    alpha_init: 1.0
+    beta: 0.5
+    c_armijo: 1.0e-4
+
+# ── Explicit runs ──────────────────────────────────────────────────────────────
+# GD family: show stability range c ∈ (0, 2). c=2 → divergence; c<2 → converges.
+# Newton: fixed (B7) may diverge far from solution; backtracking (B8) = damped Newton.
+# L-BFGS: 1-step/epoch (B9) vs full convergence (B10).
+# SGD: fixed (B11, correct) vs backtracking (B12, demonstration of failure).
+runs:
+  # ── GD: step size sensitivity ────────────────────────────────────────────────
+  - id: B1
+    loss: bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 0.5          # Conservative: half the theoretically optimal step
+
+  - id: B2
+    loss: bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0          # η = 1/L — theoretically optimal
+
+  - id: B3
+    loss: bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.9          # Near divergence boundary (c < 2 guarantees convergence)
+
+  - id: B4
+    loss: bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: backtracking   # Armijo auto-finds a safe step — reference for B1/B2/B3
+
+  # ── NAG: fixed vs backtracking ───────────────────────────────────────────────
+  - id: B5
+    loss: bce
+    optimizer: nag
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+
+  - id: B6
+    loss: bce
+    optimizer: nag
+    reg: l2
+    lambda: 0.01
+    step: backtracking
+
+  # ── Newton: pure vs damped ───────────────────────────────────────────────────
+  - id: B7
+    loss: bce
+    optimizer: newton
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0          # Pure Newton step (α=1). May diverge early in training —
+                    # demonstrates why global convergence requires damping.
+    max_epochs: 100 # Short — likely diverges quickly or oscillates
+
+  - id: B8
+    loss: bce
+    optimizer: newton
+    reg: l2
+    lambda: 0.01
+    step: backtracking   # Damped Newton — globally convergent, quadratic locally
+
+  # ── L-BFGS: per-epoch-step vs full convergence ───────────────────────────────
+  - id: B9
+    loss: bce
+    optimizer: lbfgs
+    reg: l2
+    lambda: 0.01
+    step: backtracking
+    lbfgs_maxiter: 1     # 1 quasi-Newton step per epoch — fair epoch comparison
+
+  - id: B10
+    loss: bce
+    optimizer: lbfgs
+    reg: l2
+    lambda: 0.01
+    step: backtracking
+    lbfgs_maxiter: 100   # Full convergence per "epoch" — practical L-BFGS use
+    max_epochs: 50       # Fewer outer epochs since each is expensive
+
+  # ── SGD: correct use vs backtracking failure ─────────────────────────────────
+  - id: B11
+    loss: bce
+    optimizer: sgd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 0.01
+    batch_size: 64
+
+  - id: B12
+    loss: bce
+    optimizer: sgd
+    reg: l2
+    lambda: 0.01
+    step: backtracking   # Armijo on mini-batch — expected erratic behavior
+    batch_size: 64
+    max_epochs: 100

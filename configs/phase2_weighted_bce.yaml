@@ -1,0 +1,133 @@
+group: D_best_weighted_bce
+description: >
+  Best-effort sweep for Weighted BCE — find the best (optimizer, reg, c_scale)
+  for this loss independently. Results feed the final test-set evaluation.
+
+max_epochs: 500
+tol_obj: 1.0e-6
+patience_inner: 5
+patience_outer: 20
+seed: 42
+newton_epsilon_damp: 1.0e-6
+
+step_size:
+  backtracking:
+    alpha_init: 1.0
+    beta: 0.5
+    c_armijo: 1.0e-4
+
+# ── Explicit runs ──────────────────────────────────────────────────────────────
+# Step 1: Optimizer candidates — fix L2 λ=0.01, c_scale=1.0 (exact compensation)
+# Step 2: Regularization candidates — fix best optimizer from step 1
+# Step 3: Loss HP sweep — fix best optimizer+reg, vary c_scale
+# (Steps 1 and 2 use c_scale=1.0 as neutral; Step 3 explores the full range)
+runs:
+  # ── Step 1: Optimizer ────────────────────────────────────────────────────────
+  - id: wBCE_opt_GD
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 1.0
+
+  - id: wBCE_opt_NAG
+    loss: weighted_bce
+    optimizer: nag
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 1.0
+
+  - id: wBCE_opt_LBFGS
+    loss: weighted_bce
+    optimizer: lbfgs
+    reg: l2
+    lambda: 0.01
+    step: backtracking
+    lbfgs_maxiter: 10
+    c_scale: 1.0
+
+  # ── Step 2: Regularization (use GD as default; update after step 1 analysis) ─
+  - id: wBCE_reg_none
+    loss: weighted_bce
+    optimizer: gd
+    reg: none
+    step: fixed
+    c: 1.0
+    c_scale: 1.0
+
+  - id: wBCE_reg_L2_001
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 1.0
+
+  - id: wBCE_reg_L2_010
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.1
+    step: fixed
+    c: 1.0
+    c_scale: 1.0
+
+  # ── Step 3: c_scale sweep (fix best optimizer+reg from above) ────────────────
+  - id: wBCE_cs_050
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 0.50   # Under-weighting positives
+
+  - id: wBCE_cs_075
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 0.75
+
+  - id: wBCE_cs_100
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 1.00   # Exact frequency compensation (w_pos = R)
+
+  - id: wBCE_cs_125
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 1.25
+
+  - id: wBCE_cs_150
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 1.50
+
+  - id: wBCE_cs_200
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 2.00   # Over-weighting positives (improved recall, lower precision)

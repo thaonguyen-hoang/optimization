@@ -1,0 +1,58 @@
+group: E
+description: >
+  SGD batch size effect — how does batch size affect convergence noise,
+  speed per epoch, and speed per wall-clock second?
+  Fixed: BCE, L2 (λ=0.01), fixed step (c=0.01/L for SGD).
+  GD (full batch) is included as the deterministic limit case.
+
+max_epochs: 500
+tol_obj: 1.0e-6
+patience_inner: 5
+patience_outer: 20
+seed: 42
+
+step_size:
+  backtracking:
+    alpha_init: 1.0
+    beta: 0.5
+    c_armijo: 1.0e-4
+
+# ── Explicit runs ──────────────────────────────────────────────────────────────
+# Batch sizes: powers of 2, from true stochastic (bs=1) to mini-batch (bs=64)
+# to full-batch GD. Covers the full variance-computation tradeoff spectrum.
+runs:
+  - id: E1
+    loss: bce
+    optimizer: gd       # Full-batch GD — zero gradient noise, expensive per step
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+
+  - id: E2
+    loss: bce
+    optimizer: sgd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 0.01
+    batch_size: 64      # Standard mini-batch — practical tradeoff
+
+  - id: E3
+    loss: bce
+    optimizer: sgd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 0.01
+    batch_size: 16      # Small mini-batch — more noise, more updates per epoch
+
+  - id: E4
+    loss: bce
+    optimizer: sgd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 0.01
+    batch_size: 1       # True stochastic — maximum variance, cheapest per step
+    max_epochs: 200     # Fewer epochs since each epoch has many steps

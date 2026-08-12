@@ -1,0 +1,102 @@
+group: D_controlled
+description: >
+  Controlled loss function comparison — which loss handles class imbalance
+  best when the optimizer is held constant?
+  Fixed: GD, L2 (λ=0.01), fixed step c=1.0/L.
+  Only the loss function (and its own hyperparams) vary.
+  This isolates the loss function as the sole changing variable.
+
+max_epochs: 500
+tol_obj: 1.0e-6
+patience_inner: 5
+patience_outer: 20
+seed: 42
+
+step_size:
+  backtracking:
+    alpha_init: 1.0
+    beta: 0.5
+    c_armijo: 1.0e-4
+
+# ── Explicit runs ──────────────────────────────────────────────────────────────
+# Loss-specific HPs are swept to find the best configuration for each loss.
+# Best-per-loss (by val AUROC/AUPRC) is then used for the controlled comparison plot.
+runs:
+  # ── BCE (reference) ──────────────────────────────────────────────────────────
+  - id: D_ctrl_BCE
+    loss: bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+
+  # ── Weighted BCE: sweep c_scale around R (the imbalance ratio) ────────────────
+  # w_pos = c_scale * R;  c_scale=1 → exact frequency compensation
+  - id: D_ctrl_wBCE_075
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 0.75
+
+  - id: D_ctrl_wBCE_100
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 1.0    # Theoretically optimal: w_pos = R
+
+  - id: D_ctrl_wBCE_150
+    loss: weighted_bce
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    c_scale: 1.5    # Intentional over-weighting → higher recall, lower precision
+
+  # ── Squared Hinge ─────────────────────────────────────────────────────────────
+  - id: D_ctrl_SqHinge
+    loss: squared_hinge
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+
+  # ── Focal loss: anti-correlated (γ, α) pairs ──────────────────────────────────
+  # γ increases (more dynamic balancing) → α decreases (less static balancing)
+  - id: D_ctrl_Focal_05
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 0.5
+    alpha: 0.75     # Heavy static balance, light focusing
+
+  - id: D_ctrl_Focal_20
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 2.0
+    alpha: 0.50     # Lin et al. (2017) default
+
+  - id: D_ctrl_Focal_50
+    loss: focal
+    optimizer: gd
+    reg: l2
+    lambda: 0.01
+    step: fixed
+    c: 1.0
+    gamma: 5.0
+    alpha: 0.25     # High focusing, minimal static balance
