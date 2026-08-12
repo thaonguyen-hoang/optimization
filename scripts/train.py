@@ -49,12 +49,13 @@ def parse_args():
                    help="gd|nag|newton|sgd")
     p.add_argument("--lr", type=float, default=1e-2, help="fixed step size (fixed-step mode)")
     p.add_argument("--lr-schedule", choices=["fixed", "diminishing"], default="fixed", help="lr schedule for SGD")
-    p.add_argument("--backtracking", type=int, choices=[0, 1], default=0,
-                   help="use backtracking line search (Armijo/Parabol) for gd/nag/newton (0=no, 1=yes)")
+    p.add_argument("--backtracking", action="store_true",
+                   help="use backtracking line search (Armijo/Parabol) for gd/nag/newton")
     p.add_argument("--initial_lr", type=float, default=1.0, help="backtracking initial step")
     p.add_argument("--w-pos", type=float, default=1.0, help="weighted BCE positive weight")
     p.add_argument("--w-neg", type=float, default=1.0, help="weighted BCE negative weight")
     p.add_argument("--epochs", type=int, default=50)
+    p.add_argument("--loss-epsilon", type=float, default=0.0, help="early stopping threshold for loss change")
     p.add_argument("--batch-size", type=int, default=256, help="SGD mini-batch size")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--log-every-iters", type=int, default=50)
@@ -86,7 +87,8 @@ def build_config(args):
         "lr_schedule": args.lr_schedule,
         "backtracking": bool(args.backtracking), "initial_lr": args.initial_lr,
         "w_pos": args.w_pos, "w_neg": args.w_neg,
-        "epochs": args.epochs, "batch_size": args.batch_size,
+        "epochs": args.epochs, "loss_epsilon": args.loss_epsilon, 
+        "batch_size": args.batch_size,
         "seed": args.seed, "log_every_iters": args.log_every_iters,
         "standardize": not args.no_standardize,
     }
@@ -128,7 +130,7 @@ def main():
         n_epochs=args.epochs,
         batch_size=len(X_train) if batch_size_for_run is None else batch_size_for_run,
         seed=args.seed, log_every_iters=args.log_every_iters,
-        verbose_every=args.verbose_every,
+        verbose_every=args.verbose_every, loss_epsilon=args.loss_epsilon,
     )
     train_time = time.time() - t0
 

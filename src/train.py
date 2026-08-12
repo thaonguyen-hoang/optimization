@@ -27,7 +27,7 @@ def train_logreg(X_train, y_train, X_val, y_val,
                  loss_fn, optimizer, regularizer,
                  n_epochs: int = 100, batch_size: int = 256,
                  seed: int = 42, log_every_iters: int = 50,
-                 verbose_every: int = 10):
+                 verbose_every: int = 10, loss_epsilon: float = 0.0):
     
     opt_name = optimizer.name
     is_full_batch = opt_name in FULL_BATCH_OPTIMIZERS
@@ -92,6 +92,8 @@ def train_logreg(X_train, y_train, X_val, y_val,
 
     t0 = time.time()
     global_iter = 0
+    prev_train_loss = float('inf')
+    early_stopped = False
 
     for epoch in range(n_epochs):
         if is_full_batch:
@@ -189,12 +191,22 @@ def train_logreg(X_train, y_train, X_val, y_val,
             best_val_auprc = m_val["auprc"]
             best_w, best_b, best_epoch = w.copy(), b, epoch
 
-        if verbose_every and (epoch % verbose_every == 0 or epoch == n_epochs - 1):
-            print(f"epoch {epoch:4d}  train_loss={ep_train_loss:.4f}  val_loss={val_loss:.4f}  "
+        if verbose_every and (epoch % verbose_every == 0 or epoch == n_epochs - 1 or early_stopped):
+            print(f"epoch {epoch:4d}  "
+                  f"train_loss={hist['train_loss'][-1]:.4f}  "
+                  f"val_loss={val_loss:.4f}  "
                   f"val_auprc={m_val['auprc']:.4f}  "
                   f"val_f1={m_val['f1_minority']:.4f}  "
                   f"val_acc={m_val['accuracy']:.4f}  "
                   f"t={time.time() - t0:.1f}s")
+                  
+        # Check early stopping at the end of epoch
+        current_train_loss = F_val(w, b)
+        if loss_epsilon > 0.0 and abs(prev_train_loss - current_train_loss) < loss_epsilon:
+            print(f"Early stopping at epoch {epoch}: Loss change ({abs(prev_train_loss - current_train_loss):.6e}) < epsilon ({loss_epsilon})")
+            early_stopped = True
+            break
+        prev_train_loss = current_train_loss
 
     for k in hist:
         hist[k] = np.asarray(hist[k], dtype=np.float64)

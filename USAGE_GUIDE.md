@@ -48,6 +48,7 @@ Dưới đây là toàn bộ các arguments bạn có thể truyền vào `scrip
 
 ### 3.4. Cấu hình Quá Trình Huấn Luyện
 *   `--epochs` (Kiểu int, mặc định `50`): Số vòng lặp qua toàn bộ dữ liệu.
+*   `--loss-epsilon` (Kiểu float, mặc định `0.0`): Ngưỡng dừng sớm (Early Stopping) dựa trên sự thay đổi của hàm mục tiêu (Train Loss). Nếu khoảng cách giữa Loss của epoch hiện tại và epoch trước đó nhỏ hơn `--loss-epsilon`, thuật toán sẽ kết thúc sớm quá trình huấn luyện để tiết kiệm thời gian. Mặc định là `0.0` (tắt tính năng này). Trong `run_tune.sh`, giá trị này được cấu hình tự động là `1e-4` để đẩy nhanh quá trình quét.
 *   `--batch-size` (Kiểu int, mặc định `256`): Kích thước mini-batch. 
     *   *Lưu ý:* Chỉ có tác dụng với `--optimizer sgd`. Các thuật toán còn lại (GD, NAG, Newton) luôn là Full-Batch (dùng toàn bộ tập train), tham số này tự động bị bỏ qua.
 *   `--seed` (Kiểu int, mặc định `42`): Hạt giống ngẫu nhiên để chia batch cho SGD và lấy mẫu Hessian.
