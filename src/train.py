@@ -26,8 +26,8 @@ def _sigmoid(z):
 def train_logreg(X_train, y_train, X_val, y_val,
                  loss_fn, optimizer, regularizer,
                  n_epochs: int = 100, batch_size: int = 256,
-                 seed: int = 42, log_every_iters: int = 50,
-                 verbose_every: int = 10, loss_epsilon: float = 0.0):
+                 seed: int = 42, verbose_every: int = 5, loss_epsilon: float = 0.0,
+                 patience: int = 3):
     
     opt_name = optimizer.name
     is_full_batch = opt_name in FULL_BATCH_OPTIMIZERS
@@ -67,16 +67,35 @@ def train_logreg(X_train, y_train, X_val, y_val,
         z = X_train @ ww + bb
         p = _sigmoid(z)
         weights = p * (1 - p)
-        H = (X_train * weights[:, None]).T @ X_train / n
+        
+        # Block Hessian matrix
+        # H_ww: (d, d), H_wb: (d, 1), H_bw: (1, d), H_bb: (1, 1)
+        H_ww = (X_train * weights[:, None]).T @ X_train / n
+        H_wb = X_train.T @ weights / n
+        H_bw = H_wb.T
+        H_bb = np.sum(weights) / n
+        
+        # Combine blocks into full Hessian of size (d+1, d+1)
+        H_full = np.zeros((d + 1, d + 1))
+        H_full[:d, :d] = H_ww
+        H_full[:d, d] = H_wb
+        H_full[d, :d] = H_bw
+        H_full[d, d] = H_bb
+        
         if regularizer.name == "l2":
-            H = H + regularizer.lam * np.eye(d)
+            # Apply L2 penalty only to the w block, bias is generally not regularized
+            H_full[:d, :d] += regularizer.lam * np.eye(d)
         
         gw = grad_w(ww, bb)
         if regularizer.name == "l2":
             gw += regularizer.grad(ww)
             
         gb = grad_b(ww, bb)
-        return H, gw, gb
+        
+        # Combine full gradient
+        g_full = np.append(gw, gb)
+        
+        return H_full, g_full
 
     # ----- history buffers -----
     hist = {
@@ -92,7 +111,9 @@ def train_logreg(X_train, y_train, X_val, y_val,
 
     t0 = time.time()
     global_iter = 0
-    prev_train_loss = float('inf')
+    
+    smoothed_loss = None
+    wait_count = 0
     early_stopped = False
 
     for epoch in range(n_epochs):
@@ -133,30 +154,6 @@ def train_logreg(X_train, y_train, X_val, y_val,
             
             w, b = optimizer.step(ctx)
             global_iter += 1
-
-            if global_iter % log_every_iters == 0 or global_iter == 1:
-                tr_loss = F_val(w, b)
-                if is_full_batch:
-                    if smooth:
-                        gn = float(np.linalg.norm(grad_w(w, b) + regularizer.grad(w)))
-                    else:
-                        gn = float(np.linalg.norm(grad_w(w, b))) # pseudo norm for non-smooth
-                else:
-                    if smooth:
-                        gn = float(np.linalg.norm(gw_batch + regularizer.grad(w)))
-                    else:
-                        gn = float(np.linalg.norm(gw_batch))
-                        
-                hist["iter"].append(global_iter)
-                hist["epoch"].append(epoch)
-                hist["train_loss"].append(tr_loss)
-                hist["grad_norm"].append(gn)
-                hist["wall_time"].append(time.time() - t0)
-                hist["val_loss"].append(np.nan)
-                hist["val_auprc"].append(np.nan)
-                hist["val_f1_minority"].append(np.nan)
-                hist["val_accuracy"].append(np.nan)
-                hist["val_auroc"].append(np.nan)
 
         # end-of-epoch
         z_val = X_val @ w + b
@@ -202,19 +199,30 @@ def train_logreg(X_train, y_train, X_val, y_val,
                   
         # Check early stopping at the end of epoch
         current_train_loss = F_val(w, b)
-        if loss_epsilon > 0.0 and abs(prev_train_loss - current_train_loss) < loss_epsilon:
-            print(f"Early stopping at epoch {epoch}: Loss change ({abs(prev_train_loss - current_train_loss):.6e}) < epsilon ({loss_epsilon})")
-            if not (verbose_every and (epoch % verbose_every == 0 or epoch == n_epochs - 1)):
-                print(f"epoch {epoch:4d}  "
-                      f"train_loss={hist['train_loss'][-1]:.4f}  "
-                      f"val_loss={val_loss:.4f}  "
-                      f"val_auprc={m_val['auprc']:.4f}  "
-                      f"val_f1={m_val['f1_minority']:.4f}  "
-                      f"val_acc={m_val['accuracy']:.4f}  "
-                      f"t={time.time() - t0:.1f}s")
-            early_stopped = True
-            break
-        prev_train_loss = current_train_loss
+        if loss_epsilon > 0.0:
+            if smoothed_loss is None:
+                smoothed_loss = current_train_loss
+            else:
+                prev_smoothed = smoothed_loss
+                smoothed_loss = 0.9 * smoothed_loss + 0.1 * current_train_loss
+                delta = abs(prev_smoothed - smoothed_loss)
+                
+                if delta < loss_epsilon:
+                    wait_count += 1
+                    if wait_count >= patience:
+                        print(f"Early stopping at epoch {epoch}: Smoothed loss change ({delta:.6e}) < epsilon ({loss_epsilon}) for {patience} consecutive epochs.")
+                        if not (verbose_every and (epoch % verbose_every == 0 or epoch == n_epochs - 1)):
+                            print(f"epoch {epoch:4d}  "
+                                  f"train_loss={hist['train_loss'][-1]:.4f}  "
+                                  f"val_loss={val_loss:.4f}  "
+                                  f"val_auprc={m_val['auprc']:.4f}  "
+                                  f"val_f1={m_val['f1_minority']:.4f}  "
+                                  f"val_acc={m_val['accuracy']:.4f}  "
+                                  f"t={time.time() - t0:.1f}s")
+                        early_stopped = True
+                        break
+                else:
+                    wait_count = 0
 
     for k in hist:
         hist[k] = np.asarray(hist[k], dtype=np.float64)

@@ -252,18 +252,19 @@ class Newton:
             
         w, b = ctx["w"], ctx["b"]
         F0 = ctx["F_val"](w, b)
-        H, gw, gb = ctx["hessian_wb"](w, b)
-        # Note: hessian_wb returns g_w already including L2 grad if applicable
+        H_full, g_full = ctx["hessian_wb"](w, b)
         
         try:
-            d_w = np.linalg.solve(H, -gw)
+            d_full = np.linalg.solve(H_full, -g_full)
         except np.linalg.LinAlgError:
-            d_w = -gw # fallback to gradient if singular
-        d_b = -gb # simple identity block for bias
+            d_full = -g_full # fallback to gradient if singular
+            
+        d_w = d_full[:-1]
+        d_b = d_full[-1]
         
         t = 1.0
         if self.backtracking:
-            ddot = float(np.dot(gw, d_w) + gb * d_b)
+            ddot = float(np.dot(g_full, d_full))
             while True:
                 w_new = w + t * d_w
                 b_new = b + t * d_b
@@ -280,7 +281,7 @@ class Newton:
 class SGD:
     name = "sgd"
     def __init__(self, lr: float = 1e-2, schedule: str = "fixed"):
-        self.lr_0 = lr
+        self.lr = lr
         self.schedule = schedule
         self.k = 1
 
@@ -291,9 +292,9 @@ class SGD:
         w, b = ctx["w"], ctx["b"]
         
         if self.schedule == "diminishing":
-            t = self.lr_0 / math.sqrt(self.k)
+            t = 0.5 / math.sqrt(self.k)
         else:
-            t = self.lr_0
+            t = self.lr
             
         self.k += 1
         

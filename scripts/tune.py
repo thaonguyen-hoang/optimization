@@ -35,6 +35,11 @@ import itertools
 import numpy as np
 import pandas as pd
 
+try:
+    from ._log_utils import start_run_log  # noqa: E402  (python -m scripts.tune)
+except ImportError:
+    from _log_utils import start_run_log  # noqa: E402  (python scripts/tune.py)
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from data_utils import load_processed  # noqa: E402
@@ -64,7 +69,7 @@ def _val_auprc(X_val, y_val, w, b, loss_fn):
 def _run_trial(X_train, y_train, X_val, y_val,
                loss_name, w_pos, w_neg,
                reg_name, lam, opt_name, lr, schedule, backtracking,
-               epochs, batch_size, seed, log_every_iters, loss_epsilon,
+               epochs, batch_size, seed, loss_epsilon,
                initial_lr=1.0):
     """Run one training trial and return (val_auprc, val_metrics, val_loss, train_time, result)."""
     loss_fn = build_loss(loss_name, w_pos=w_pos, w_neg=w_neg)
@@ -81,7 +86,7 @@ def _run_trial(X_train, y_train, X_val, y_val,
         loss_fn=loss_fn, optimizer=optimizer, regularizer=regularizer,
         n_epochs=epochs,
         batch_size=len(X_train) if is_full_batch else batch_size,
-        seed=seed, log_every_iters=log_every_iters, verbose_every=0,
+        seed=seed, verbose_every=0,
         loss_epsilon=loss_epsilon
     )
     train_time = time.time() - t0
@@ -110,7 +115,7 @@ def stage_a_loss_hparam(data, loss_name, epochs, seed):
                               loss_fn=loss_fn, optimizer=optimizer,
                               regularizer=build_regularizer("none"),
                               n_epochs=epochs, batch_size=len(X_train),
-                              seed=seed, log_every_iters=10**9, verbose_every=0)
+                              seed=seed, verbose_every=0)
         auprc = _val_auprc(X_val, y_val, result["best_w"], result["best_b"], loss_fn)
         print(f"  w_pos={w_pos}: val AUPRC={auprc:.4f}")
         if auprc > best["score"]:
@@ -160,7 +165,7 @@ def run_one(args, data, loss_hp, reg_name, lam, trial):
             reg_name=reg_name, lam=lam, opt_name=opt_name, lr=lr,
             schedule=schedule, backtracking=backtracking, epochs=args.tune_epochs,
             batch_size=args.batch_size, seed=args.seed,
-            log_every_iters=args.log_every_iters, loss_epsilon=args.loss_epsilon,
+            loss_epsilon=args.loss_epsilon,
         )
         # Apply schedule to optimizer name for logging if SGD
         opt_log = opt_name
@@ -199,7 +204,6 @@ def main():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--data-dir", default="data")
     p.add_argument("--out-dir", default="runs")
-    p.add_argument("--log-every-iters", type=int, default=200)
     p.add_argument("--skip-stage-a", action="store_true")
     p.add_argument("--no-backtracking", action="store_true",
                    help="skip backtracking trials (smooth only)")
@@ -208,6 +212,7 @@ def main():
     args = p.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
+    start_run_log(args.out_dir, f"tune_{args.loss}.log")
     data = load_processed(args.data_dir)
     print(f"train={data['X_train'].shape} val={data['X_val'].shape} "
           f"test={data['X_test'].shape}")

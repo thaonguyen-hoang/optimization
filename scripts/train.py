@@ -24,6 +24,11 @@ import time
 
 import numpy as np
 
+try:
+    from ._log_utils import start_run_log  # noqa: E402  (python -m scripts.train)
+except ImportError:
+    from _log_utils import start_run_log  # noqa: E402  (python scripts/train.py)
+
 # Make src/ importable when run as a module from repo root.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -55,11 +60,11 @@ def parse_args():
     p.add_argument("--w-pos", type=float, default=1.0, help="weighted BCE positive weight")
     p.add_argument("--w-neg", type=float, default=1.0, help="weighted BCE negative weight")
     p.add_argument("--epochs", type=int, default=50)
-    p.add_argument("--loss-epsilon", type=float, default=0.0, help="early stopping threshold for loss change")
+    p.add_argument("--loss-epsilon", type=float, default=1e-5, help="early stopping threshold for smoothed loss change")
+    p.add_argument("--patience", type=int, default=3, help="early stopping patience")
     p.add_argument("--batch-size", type=int, default=256, help="SGD mini-batch size")
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--log-every-iters", type=int, default=50)
-    p.add_argument("--verbose-every", type=int, default=10)
+    p.add_argument("--verbose-every", type=int, default=5)
     p.add_argument("--data-dir", default="data")
     p.add_argument("--out-dir", default="runs")
     p.add_argument("--run-id", default=None, help="override auto-generated run id")
@@ -75,7 +80,13 @@ def parse_args():
 def make_run_id(args):
     if args.run_id:
         return args.run_id
-    tag = f"{args.loss}_{args.reg}_{args.optimizer}_lr{args.lr}_lam{args.lam}"
+    if args.backtracking:
+        lr_str = f"bt_init{args.initial_lr}"
+    elif args.optimizer == "sgd" and getattr(args, "lr_schedule", "fixed") == "diminishing":
+        lr_str = f"lr{args.lr}_dim"
+    else:
+        lr_str = f"lr{args.lr}"
+    tag = f"{args.loss}_{args.reg}_{args.optimizer}_{lr_str}_lam{args.lam}"
     stamp = time.strftime("%m-%d-%H-%M")
     return f"{tag}_{stamp}"
 
@@ -89,13 +100,17 @@ def build_config(args):
         "w_pos": args.w_pos, "w_neg": args.w_neg,
         "epochs": args.epochs, "loss_epsilon": args.loss_epsilon, 
         "batch_size": args.batch_size,
-        "seed": args.seed, "log_every_iters": args.log_every_iters,
+        "seed": args.seed,
         "standardize": not args.no_standardize,
     }
 
 
 def main():
     args = parse_args()
+
+    run_id = make_run_id(args)
+    run_dir = os.path.join(args.out_dir, run_id)
+    start_run_log(run_dir, "train.log")
 
     opt_name = args.optimizer
     
@@ -129,14 +144,13 @@ def main():
         loss_fn=loss_fn, optimizer=optimizer, regularizer=regularizer,
         n_epochs=args.epochs,
         batch_size=len(X_train) if batch_size_for_run is None else batch_size_for_run,
-        seed=args.seed, log_every_iters=args.log_every_iters,
+        seed=args.seed,
         verbose_every=args.verbose_every, loss_epsilon=args.loss_epsilon,
+        patience=args.patience,
     )
     train_time = time.time() - t0
 
     # ----- write artifacts -----
-    run_id = make_run_id(args)
-    run_dir = os.path.join(args.out_dir, run_id)
     ckpt_dir = os.path.join(run_dir, "checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
 
