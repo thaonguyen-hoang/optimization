@@ -23,11 +23,11 @@ optimization/
 │   └── plotting.py       # convergence + metrics + Hessian-spectrum figures
 ├── scripts/
 │   ├── train.py          # CLI: one run -> runs/<id>/{config,history,checkpoint,metrics}
-│   └── tune.py           # CLI: full grid search for one loss -> summary + best
+│   └── expand_tune.py    # CLI: YAML grid -> manifest TSV (1 trial / line)
 ├── runs/                 # run artifacts (gitignored)
 ├── figures/              # generated figures (gitignored)
 ├── run_train.sh          # example single run
-├── run_tune.sh           # tuning for all 3 losses + merge best configs
+├── run_tune.sh           # YAML-driven tuning loop -> summary + best per objective
 ├── requirements.txt
 └── README.md
 ```
@@ -84,33 +84,54 @@ Outputs land in `runs/<run_id>/`:
 
 ### 2. Hyperparameter tuning
 
-```bash
-./run_tune.sh                # tunes bce, weighted_bce, squared_hinge
-```
-
-or a single loss:
+YAML-driven grid search. Each loss has a grid file `configs/tune_<loss>.yaml`
+(see below for the current grids).
 
 ```bash
-python -m scripts.tune --loss bce --tune-epochs 30
+./run_tune.sh --config configs/tune_bce.yaml            # full grid, epochs from YAML
+./run_tune.sh --config configs/tune_bce.yaml --epochs 50  # override epochs
+./run_tune.sh --config configs/tune_bce.yaml --dry-run    # print trials, run nothing
 ```
 
-`tune.py` does:
+Pipeline — each layer does exactly one thing:
 
-1. **Stage A** — loss-hparam pre-sweep (only `weighted_bce`: `w_pos ∈ {1,2,4,6,10}`).
-2. **Stage B** — full grid over the three objectives × eligible optimizers × step sizes × `λ`:
+1. `python -m scripts.expand_tune <yaml>` parses the grid and prints a
+   **manifest TSV** (1 row = 1 valid trial). No training, no metrics.
+2. `run_tune.sh` loops the manifest and launches
+   `python -m scripts.train ...` per trial with an explicit
+   `--run-id trial_<NNN>_...`, so every trial is a full run dir
+   (`metrics.json`, `history.npz`, `config.json`, `convergence.png`, ...).
+   Failed trials are recorded in `failed_trials.txt`; the loop continues.
+3. Aggregation (jq + awk) produces `tune_<loss>_summary.tsv` (every trial +
+   convergence stats) and `best_per_objective.tsv`: per objective `loss|reg`,
+   the **fastest** (min `wall_time_to_best`) and **fewest-iters**
+   (min `iters_to_best`) runs.
 
-- **Smooth (none, L2):** GD, SGD, NAG, Newton with
-     fixed `lr ∈ [1e-4, 1e-3, 1e-2, 1e-1, 1.0]`, **and** the backtracking
-     variants (Armijo for GD/Newton, Parabol for NAG; `initial_lr=1, c=1e-4, ρ=0.5`).
-   - **Non-smooth (L1):** GD (ISTA), NAG (FISTA), SGD (Proximal) with both
-     fixed `lr` and **Proximal Backtracking** (Parabol Majorization on smooth part).
+Output layout:
+
+```
+runs/tune_<loss>_<timestamp>/
+├── manifest.tsv                # trial grid used
+├── failed_trials.txt           # trial run_ids that errored (empty if none)
+├── trials/trial_<NNN>_*/       # one full run dir per trial
+├── tune_<loss>_summary.tsv
+└── best_per_objective.tsv
+```
+
+Combination rules enforced by `expand_tune.py` (per optimizer / reg):
+
+- **Smooth (none, L2):** GD, NAG, SGD, Newton with fixed `lr`, **and**
+  backtracking variants (Armijo alpha×beta for GD/Newton, Parabol beta-only
+  for NAG; `initial_lr=1`).
+- **Non-smooth (L1):** GD (ISTA), NAG (FISTA), SGD (Proximal) — fixed `lr`
+  and Proximal Backtracking (Parabol, beta-only). Newton is dropped for L1.
+- SGD has no backtracking; mini-batch `batch_size` swept; `diminishing`
+  schedule variant.
 
 Selection criterion = **validation AUPRC** (imbalanced, minority-focused).
-F1-minority and accuracy are logged for monitoring but not used to pick.
-
-Outputs: `runs/tune_<loss>_summary.csv` (every trial) and
-`runs/best_<loss>.json` (best config). `run_tune.sh` also merges the three
-best configs into `runs/final_comparison_table.csv`.
+Convergence-efficiency comparisons use `wall_time_to_best` (fastest) and
+`iters_to_best` (fewest iterations; note SGD counts batch-updates, so compare
+cross-method with `epochs_to_best`).
 
 ## Math summary
 

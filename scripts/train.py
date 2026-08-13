@@ -57,6 +57,10 @@ def parse_args():
     p.add_argument("--backtracking", action="store_true",
                    help="use backtracking line search (Armijo/Parabol) for gd/nag/newton")
     p.add_argument("--initial_lr", type=float, default=1.0, help="backtracking initial step")
+    p.add_argument("--armijo-alpha", type=float, default=1e-4,
+                   help="Armijo sufficient-decrease coefficient (backtracking)")
+    p.add_argument("--armijo-beta", type=float, default=0.5,
+                   help="backtracking step-shrink factor")
     p.add_argument("--w-pos", type=float, default=1.0, help="weighted BCE positive weight")
     p.add_argument("--w-neg", type=float, default=1.0, help="weighted BCE negative weight")
     p.add_argument("--epochs", type=int, default=50)
@@ -82,6 +86,10 @@ def make_run_id(args):
         return args.run_id
     if args.backtracking:
         lr_str = f"bt_init{args.initial_lr}"
+        if args.armijo_alpha != 1e-4:
+            lr_str += f"_a{args.armijo_alpha}"
+        if args.armijo_beta != 0.5:
+            lr_str += f"_b{args.armijo_beta}"
     elif args.optimizer == "sgd" and getattr(args, "lr_schedule", "fixed") == "diminishing":
         lr_str = f"lr{args.lr}_dim"
     else:
@@ -97,12 +105,25 @@ def build_config(args):
         "optimizer": args.optimizer, "lr": args.lr,
         "lr_schedule": args.lr_schedule,
         "backtracking": bool(args.backtracking), "initial_lr": args.initial_lr,
+        "armijo_alpha": args.armijo_alpha, "armijo_beta": args.armijo_beta,
         "w_pos": args.w_pos, "w_neg": args.w_neg,
-        "epochs": args.epochs, "loss_epsilon": args.loss_epsilon, 
+        "epochs": args.epochs, "loss_epsilon": args.loss_epsilon, "patience": args.patience,
         "batch_size": args.batch_size,
         "seed": args.seed,
         "standardize": not args.no_standardize,
     }
+
+
+def _sanitize_json(obj):
+    """Replace non-finite floats (NaN/Inf, e.g. from a diverged run) with
+    None so metrics.json always stays valid JSON for jq/awk aggregation."""
+    if isinstance(obj, dict):
+        return {k: _sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_json(v) for v in obj]
+    if isinstance(obj, (float, np.floating)) and not np.isfinite(obj):
+        return None
+    return obj
 
 
 def main():
@@ -121,6 +142,8 @@ def main():
         backtracking=bool(args.backtracking),
         schedule=args.lr_schedule,
         initial_lr=args.initial_lr,
+        armijo_alpha=args.armijo_alpha,
+        armijo_beta=args.armijo_beta,
     )
 
     # enforce full-batch for second-order / backtracking first-order methods
@@ -181,17 +204,27 @@ def main():
         "train_time_sec": train_time,
     }
 
+    # convergence stats (compare wall-clock / iteration efficiency across methods)
+    hist = result["history"]
+    be = int(result["best_epoch"])
+    if be < 0 or be >= len(hist["iter"]):
+        be = 0  # fallback: no improving epoch logged
+    out["iters_to_best"] = int(hist["iter"][be])
+    out["epochs_to_best"] = int(hist["epoch"][be]) + 1
+    out["wall_time_to_best"] = float(hist["wall_time"][be])
+    out["total_iters"] = int(hist["iter"][-1])
+
     if args.eval_test:
         p_test = logits_to_proba(
             predict_logits(X_test, result["best_w"], result["best_b"]), loss_fn.name)
         out["test_metrics"] = compute_metrics(y_test, p_test)
 
     with open(os.path.join(run_dir, "metrics.json"), "w") as f:
-        json.dump(out, f, indent=2)
+        json.dump(_sanitize_json(out), f, indent=2)
     with open(os.path.join(run_dir, "best.json"), "w") as f:
-        json.dump({"checkpoint": "checkpoints/best.npz",
-                   "best_epoch": result["best_epoch"],
-                   "best_val_auprc": result["best_val_auprc"]}, f, indent=2)
+        json.dump(_sanitize_json({"checkpoint": "checkpoints/best.npz",
+                                  "best_epoch": result["best_epoch"],
+                                  "best_val_auprc": result["best_val_auprc"]}), f, indent=2)
 
     if args.save_figures and plot_convergence_full is not None:
         import matplotlib

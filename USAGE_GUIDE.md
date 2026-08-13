@@ -16,7 +16,11 @@ conda activate optim
 
 Dự án cung cấp 2 kịch bản chính:
 1.  **`run_train.sh` (Single Run):** Gọi `scripts/train.py`. Dùng để chạy thử nghiệm một tổ hợp thuật toán - tham số cụ thể. Rất hữu ích để debug hoặc theo dõi chi tiết một quá trình hội tụ.
-2.  **`run_tune.sh` (Grid Search):** Gọi `scripts/tune.py`. Dùng để tự động chạy quét hàng loạt các tham số (Learning rate, Lambda) qua các thuật toán khác nhau, sau đó xuất ra bảng tổng hợp kết quả (summary csv) và file cấu hình tốt nhất.
+2.  **`run_tune.sh` (Grid Search):** Pipeline 3 lớp:
+    1. `scripts/expand_tune.py` đọc `configs/tune_<loss>.yaml` → xuất **manifest TSV** (1 dòng = 1 tổ hợp hợp lệ).
+    2. Loop manifest, mỗi trial chạy độc lập `python -m scripts.train ...` với `--run-id` riêng → `runs/tune_<loss>_<ts>/trials/trial_<NNN>_*/`.
+    3. Tổng hợp bằng `jq`/`awk` → `tune_<loss>_summary.tsv` + `best_per_objective.tsv` (per objective: fastest theo `wall_time_to_best`, fewest iters theo `iters_to_best`).
+    *   Dùng `--dry-run` để in lệnh từng trial mà không chạy; dùng `--epochs N` để ép số epoch.
 
 Bạn có thể chỉnh sửa trực tiếp nội dung các file bash `.sh` này, hoặc gọi thẳng file python trên terminal.
 
@@ -43,6 +47,8 @@ Dưới đây là toàn bộ các arguments bạn có thể truyền vào `scrip
 *   `--backtracking` (Cờ/Flag, không cần giá trị): Kích hoạt tính năng tìm kiếm bước nhảy tự động (Armijo / Parabol / Lipschitz). 
     *   **⚠️ LƯU Ý ĐỎ:** Nếu bạn thêm cờ `--backtracking`, tham số `--lr` **SẼ BỊ BỎ QUA HOÀN TOÀN** (ngay cả khi bạn chỉ định `--lr 0.05`, thuật toán cũng không quan tâm).
 *   `--initial_lr` (Kiểu float, mặc định `1.0`): Bước nhảy khởi tạo (Initial step) dành **riêng cho chế độ Backtracking**. Mỗi iteration, thuật toán sẽ bắt đầu thử với bước $t$ bằng giá trị của `--initial_lr`, sau đó giảm dần nếu chưa thỏa mãn điều kiện.
+*   `--armijo-alpha` (Kiểu float, mặc định `1e-4`): Hệ số điều kiện Armijo (sufficient decrease). Chỉ dùng cho backtracking của `gd`/`newton` (không dùng cho `nag`/L1 — Parabol không có alpha).
+*   `--armijo-beta` (Kiểu float, mặc định `0.5`): Hệ số giảm bước backtracking ($t \leftarrow \beta t$). Dùng cho mọi optimizer backtracking (`gd`, `nag`, `newton`, kể cả ISTA/FISTA).
 *   `--lr-schedule`: Chế độ giảm bước nhảy. Cấu hình: `fixed` (mặc định), `diminishing`.
     *   *Chỉ có tác dụng khi `--optimizer sgd`.* Nếu `diminishing`, bước nhảy sẽ giảm theo $t_k = \frac{\text{lr}}{\sqrt{k}}$.
 

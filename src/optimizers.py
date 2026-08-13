@@ -46,6 +46,7 @@ class GD:
         self.beta = beta
         self.alpha = alpha
         self.initial_lr = initial_lr
+        self.k = 0
 
     def reset(self, w_shape, b_shape):
         pass
@@ -317,13 +318,20 @@ class SGD:
 def build_optimizer(name: str, lr: float = 1e-2, backtracking: bool = False, schedule: str = "fixed", **kwargs):
     name = name.lower()
     if name == "gd":
-        return GD(lr=lr, backtracking=backtracking, initial_lr=kwargs.get("initial_lr", 1.0))
+        return GD(lr=lr, backtracking=backtracking, 
+                  initial_lr=kwargs.get("initial_lr", 1.0),
+                  beta=kwargs.get("armijo_beta", 0.5),
+                  alpha=kwargs.get("armijo_alpha", 1e-4))
     if name == "nag":
-        return NAG(lr=lr, backtracking=backtracking, initial_lr=kwargs.get("initial_lr", 1.0))
+        return NAG(lr=lr, backtracking=backtracking, 
+                   initial_lr=kwargs.get("initial_lr", 1.0),
+                   beta=kwargs.get("armijo_beta", 0.5))
     if name == "newton":
         # Pure Newton mathematically MUST start backtracking at t=1.0 to retain quadratic convergence.
         # We enforce initial_lr=1.0 regardless of what is passed in kwargs.
-        return Newton(backtracking=backtracking)
+        return Newton(backtracking=backtracking,
+                      beta=kwargs.get("armijo_beta", 0.5),
+                      alpha=kwargs.get("armijo_alpha", 1e-4))
     if name == "sgd":
         return SGD(lr=lr, schedule=schedule)
     raise ValueError(f"Unknown optimizer: {name}")

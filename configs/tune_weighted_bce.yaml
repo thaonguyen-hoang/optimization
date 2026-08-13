@@ -1,0 +1,85 @@
+# configs/tune_weighted_bce.yaml
+name: "Weighted BCE Tuning Configuration"
+loss: "weighted_bce"
+
+globals:
+  tune_epochs: 500
+  loss_epsilon: 1.0e-4
+  seed: 42
+  patience: 3
+  w_pos_grid: [6.0]
+
+objectives:
+  - reg: "none"
+    lam_grid: [0.0]
+    optimizers:
+      - name: "gd"
+        lr_grid: [0.01, 0.1, 1.0, 5.0]
+        backtracking:
+          enabled: [False, True]
+          armijo_alpha: [1e-4, 0.1, 0.5]
+          armijo_beta: [0.5, 0.8]
+      - name: "nag"
+        lr_grid: [0.01, 0.1, 1.0, 5.0]
+        backtracking:
+          enabled: [False, True]
+          armijo_beta: [0.5, 0.8]
+      - name: "newton"
+        lr_grid: [1.0]
+        backtracking:
+          enabled: [False, True]
+          armijo_alpha: [1e-4, 0.1, 0.5]
+          armijo_beta: [0.5, 0.8]
+      - name: "sgd"
+        lr_grid: [0.01, 0.1, 0.5]
+        schedule: ["fixed", "diminishing"]
+        batch_size: [128, 256, 512]
+        backtracking:
+          enabled: [False]
+
+  - reg: "l2"
+    lam_grid: [1.0e-4, 1.0e-3, 1.0e-2]
+    optimizers:
+      - name: "gd"
+        lr_grid: [0.01, 0.1, 1.0, 5.0]
+        backtracking:
+          enabled: [False, True]
+          armijo_alpha: [1e-4, 0.1, 0.5]
+          armijo_beta: [0.5, 0.8]
+      - name: "nag"
+        lr_grid: [0.01, 0.1, 1.0, 5.0]
+        backtracking:
+          enabled: [False, True]
+          armijo_beta: [0.5, 0.8]
+      - name: "newton"
+        lr_grid: [1.0]
+        backtracking:
+          enabled: [False, True]
+          armijo_alpha: [1e-4, 0.1, 0.5]
+          armijo_beta: [0.5, 0.8]
+      - name: "sgd"
+        lr_grid: [0.01, 0.1, 0.5]
+        schedule: ["fixed", "diminishing"]
+        batch_size: [128, 256, 512]
+        backtracking:
+          enabled: [False]
+
+  - reg: "l1"
+    lam_grid: [1.0e-4, 1.0e-3, 1.0e-2]
+    optimizers:
+      - name: "gd"
+        lr_grid: [0.01, 0.1, 1.0, 5.0]
+        backtracking:
+          enabled: [False, True]
+          armijo_beta: [0.5, 0.8]
+      - name: "nag"
+        lr_grid: [0.01, 0.1, 1.0, 5.0]
+        backtracking:
+          enabled: [False, True]
+          armijo_beta: [0.5, 0.8]
+      - name: "sgd"
+        lr_grid: [0.01, 0.1, 0.5]
+        schedule: ["fixed", "diminishing"]
+        batch_size: [128, 256, 512]
+        backtracking:
+          enabled: [False]
