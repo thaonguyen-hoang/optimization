@@ -65,16 +65,30 @@ def auroc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
 
 
 def auprc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
-    """Precision-recall AUC via trapezoidal rule over sorted thresholds."""
-    order = np.argsort(-y_prob)
-    y_sorted = y_true[order]
-    tp_cum = np.cumsum(y_sorted == 1)
-    fp_cum = np.cumsum(y_sorted == 0)
+    """Average precision (PR-AUC), tie-aware, matching sklearn conventions.
+
+    ``AP = Σ_k (R_k − R_{k−1}) · P_k`` over unique score thresholds from
+    highest to lowest, where ties are scored as a single threshold (the whole
+    tied group is included before precision/recall are measured).
+    """
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
     n_pos = np.sum(y_true == 1)
-    precision = tp_cum / (tp_cum + fp_cum)
-    recall = tp_cum / n_pos if n_pos > 0 else np.zeros_like(tp_cum, dtype=float)
-    recall = np.concatenate(([0.0], recall))
-    precision = np.concatenate(([1.0], precision))
-    _trapz = getattr(np, "trapezoid", None) or np.trapz
-    return float(_trapz(precision, recall))
+    if n_pos == 0:
+        return 0.0
+    if np.sum(y_true == 0) == 0:
+        return 1.0
+
+    order = np.argsort(-y_prob, kind="stable")
+    y_sort = y_true[order].astype(float)
+    cum_tp = np.cumsum(y_sort)
+
+    # Last index of each tie group (score changes) in the sorted array.
+    neg_p = -y_prob[order]
+    first_idx = np.unique(neg_p, return_index=True)[1]
+    group_ends = np.concatenate([first_idx[1:], [len(y_sort)]]) - 1
+
+    precision = cum_tp[group_ends] / (group_ends + 1)
+    recall = cum_tp[group_ends] / n_pos
+    return float(np.sum(np.diff(np.concatenate([[0.0], recall])) * precision))
 

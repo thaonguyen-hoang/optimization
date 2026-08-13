@@ -90,7 +90,7 @@ def compute_imbalance_ratio(y: np.ndarray) -> float:
 # ─── Sigmoid ────────────────────────────────────────────────────────────────
 
 def sigmoid(z: np.ndarray) -> np.ndarray:
-    """Numerically stable sigmoid: σ(z) = 1 / (1 + exp(-z))."""
+    """Numerically stable sigmoid."""
     return np.where(
         z >= 0,
         1.0 / (1.0 + np.exp(-z)),
@@ -98,25 +98,51 @@ def sigmoid(z: np.ndarray) -> np.ndarray:
     )
 
 
-# ─── Mini-batch generator ────────────────────────────────────────────────────
+# ─── Hessian assembly ────────────────────────────────────────────────────────
 
-def iter_batches(
-    X: np.ndarray,
-    y: np.ndarray,
-    batch_size: int,
-    shuffle: bool = True,
-    rng: np.random.Generator | None = None,
-) -> "Generator[tuple[np.ndarray, np.ndarray], None, None]":
+def hessian_joint(X: np.ndarray, diag: np.ndarray, reg_diag=None,
+                  X_tilde: np.ndarray | None = None) -> np.ndarray:
     """
-    Yield (X_batch, y_batch) mini-batches of size *batch_size*.
+    Assemble the joint (d+1)×(d+1) Hessian H = X̃ᵀ·diag(diag)·X̃ / n,
+    where X̃ = [X, 1] includes the bias column and *diag* is the per-sample
+    second derivative of the loss (evaluated at the current logits).
 
-    If shuffle=True the data is permuted at the start of each call
-    (i.e., once per epoch).
+    Parameters
+    ----------
+    X         : feature matrix (n_samples, d)
+    diag      : per-sample loss Hessian diagonal, shape (n,)
+    reg_diag  : optional regularizer Hessian contribution. If 1-D of length d
+                (e.g. ``regularizer.hessian(w)``), it is placed on the
+                trailing (weight) block of H[:-1, :-1]. If a (d×d) matrix, it
+                is added directly.
+    X_tilde   : precomputed design matrix [X, 1] of shape (n, d+1). X is fixed
+                across a training run, so pass it to avoid rebuilding the
+                stacked matrix (and the O(n) allocation) on every Newton step.
+
+    Returns
+    -------
+    H : joint Hessian of shape (d+1, d+1)
     """
     n = X.shape[0]
-    if rng is None:
-        rng = np.random.default_rng()
-    indices = rng.permutation(n) if shuffle else np.arange(n)
-    for start in range(0, n, batch_size):
-        idx = indices[start: start + batch_size]
-        yield X[idx], y[idx]
+    if X_tilde is None:
+        X_tilde = np.c_[X, np.ones(n)]
+    H = X_tilde.T @ (diag[:, None] * X_tilde) / n
+
+    if reg_diag is not None:
+        reg = np.diag(reg_diag) if np.ndim(reg_diag) == 1 else reg_diag
+        H[:-1, :-1] += reg
+    return H
+
+
+# ─── JSON sanitizing ─────────────────────────────────────────────────────────
+
+def sanitize_json(obj):
+    """Recursively convert non-finite floats (NaN/inf) to None for JSON."""
+    if isinstance(obj, dict):
+        return {k: sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [sanitize_json(v) for v in obj]
+    if isinstance(obj, float) and not np.isfinite(obj):
+        return None
+    return obj
+

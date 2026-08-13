@@ -33,7 +33,9 @@ matplotlib.rcParams.update({
 sns.set_theme(style="whitegrid", palette="tab10")
 
 PLOTS_DIR = Path("plots")
-PLOTS_DIR.mkdir(exist_ok=True)
+
+# Outputs of evaluate_best.py that are not per-run result files.
+EXCLUDED_RESULTS = {"final_test_results.json"}
 
 OPTIMIZER_COLORS = {
     "gd":     "#1f77b4",
@@ -61,6 +63,8 @@ def load_results(results_dir: Path, loss_name: str) -> list[dict]:
     pattern = f"**/{loss_name}_*.json" if loss_name != "all" else "**/*.json"
     results = []
     for jf in results_dir.glob(pattern):
+        if jf.name in EXCLUDED_RESULTS:
+            continue
         with open(jf) as f:
             r = json.load(f)
         if loss_name == "all" or r.get("loss_fn") == loss_name:
@@ -76,7 +80,7 @@ def select_best_per_group(results: list[dict]) -> dict:
     """
     groups = defaultdict(list)
     for r in results:
-        key = (r["optimizer"], r["regularization"], r["step_size_type"])
+        key = (r.get("optimizer"), r.get("regularization"), r.get("step_size_type"))
         groups[key].append(r)
 
     best = {}
@@ -132,8 +136,8 @@ def plot_curves_for_loss(
                 if x_axis == "epoch":
                     x_vals = list(range(1, len(curve) + 1))
                 else:
-                    # Use cumulative optimizer step time as x-axis
-                    x_vals = run.get("cumulative_time_s", [])
+                    # Use cumulative wall-clock time as x-axis
+                    x_vals = run.get("cumulative_time_s") or run.get("wall_time_per_epoch") or []
                     if not x_vals or len(x_vals) != len(curve):
                         # Fall back to epoch if timing data is missing
                         x_vals = list(range(1, len(curve) + 1))
@@ -172,6 +176,7 @@ def main():
     args = parser.parse_args()
 
     results_dir = Path(args.results_dir)
+    PLOTS_DIR.mkdir(exist_ok=True)
     losses = LOSS_NAMES if args.loss == "all" else [args.loss]
 
     for loss_name in losses:
