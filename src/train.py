@@ -65,8 +65,11 @@ def train_logreg(X_train, y_train, X_val, y_val,
 
     def hessian_wb(ww, bb):
         z = X_train @ ww + bb
-        p = _sigmoid(z)
-        weights = p * (1 - p)
+        
+        if hasattr(loss_fn, "hessian_diag"):
+            weights = loss_fn.hessian_diag(z, y_train)
+        else:
+            raise NotImplementedError(f"Loss function {loss_fn.name} does not implement hessian_diag.")
         
         # Block Hessian matrix
         # H_ww: (d, d), H_wb: (d, 1), H_bw: (1, d), H_bb: (1, 1)

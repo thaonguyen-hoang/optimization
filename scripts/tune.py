@@ -57,7 +57,7 @@ W_POS_GRID = [1.0, 2.0, 4.0, 6.0, 10.0]
 SMOOTH_OPTS = ["gd", "nag", "newton"]
 NONSMOOTH_OPTS = ["gd", "nag"]
 
-DEFAULT_EPOCHS = 30
+DEFAULT_EPOCHS = 500
 DEFAULT_BATCH = 256
 
 
