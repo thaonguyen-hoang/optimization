@@ -4,7 +4,8 @@ evaluate_best.py — Final test-set evaluation of the best config per loss.
 For each loss function, this script:
   1. Reads all per-run JSON files in results/.
   2. Selects the config with the highest best_val_auroc per loss.
-  3. Re-trains that config on train+val data using inline training loop.
+  3. Re-trains that config on the same train split (and seed) used by the
+     sweep, reproducing the exact hyperparameters stored in ``training_cfg``.
   4. Evaluates on the held-out test set.
   5. Prints and saves a summary table.
 
@@ -14,51 +15,44 @@ Usage:
 
 import argparse
 import json
-import glob
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from src.utils import load_data, set_seed, compute_imbalance_ratio, get_logger, sigmoid
+from src.utils import load_data, set_seed, compute_imbalance_ratio, get_logger, sigmoid, sanitize_json
 from src.metrics import compute_metrics
-from src.step_size.lipschitz import lipschitz_constant
-from src.step_size.fixed import FixedLR
-from src.step_size.armijo import ArmijoLineSearch
-from src.regularizers.l1 import L1Regularizer
-from src.regularizers.l2 import L2Regularizer
-from src.losses.bce import BCELoss
-from src.losses.weighted_bce import WeightedBCELoss
-from src.losses.squared_hinge import SquaredHingeLoss
-from src.losses.focal import FocalLoss
-from src.optimizers.gd import GradientDescent
-from src.optimizers.sgd import SGD
-from src.optimizers.nag import NAG
-from src.optimizers.newton import Newton
-from src.optimizers.lbfgs import LBFGS
-from runner import train_logreg
+from runner import (train_logreg, build_loss, build_regularizer,
+                    build_step_size, build_optimizer, DEFAULT_BT_CFG)
 
 logger = get_logger("evaluate_best")
 
-LOSS_NAMES = ["bce", "weighted_bce", "squared_hinge", "focal"]
+EXCLUDED_RESULTS = {"final_test_results.json", "final_test_results.csv"}
 
 
 def find_best_per_loss(results_dir: Path) -> dict[str, dict]:
     """Scan all JSON result files and return the best run per loss (by best_val_auroc)."""
     best = {}
     for jf in results_dir.rglob("*.json"):
+        if jf.name in EXCLUDED_RESULTS:
+            continue
         with open(jf) as f:
             r = json.load(f)
+        cand = r.get("best_val_auroc")
+        if cand is None:
+            # e.g. sanitize_json wrote NaN -> null; can't rank it.
+            continue
         loss = r.get("loss_fn", "")
-        if loss not in best or r.get("best_val_auroc", 0) > best[loss].get("best_val_auroc", 0):
+        if loss not in best or cand > (best[loss].get("best_val_auroc") or 0):
             best[loss] = r
     return best
 
 
 def rebuild_and_evaluate(best_run: dict, X_train, y_train, X_val, y_val,
                          X_test, y_test, R: float, cfg_seed: int = 42) -> dict:
-    """Re-train the best config and evaluate on test set."""
+    """Re-train the best config (reproducing training_cfg) and evaluate on test set."""
     hp    = best_run["hyperparams"]
+    tcfg  = best_run.get("training_cfg", {})
     loss_name = best_run["loss_fn"]
     opt_name  = best_run["optimizer"]
     reg_type  = best_run["regularization"]
@@ -73,64 +67,43 @@ def rebuild_and_evaluate(best_run: dict, X_train, y_train, X_val, y_val,
     L          = hp.get("L", 1.0)
     decay_rate = hp.get("decay_rate", 0.0)
 
-    # Build loss
-    if loss_name == "bce":
-        loss_fn = BCELoss()
-    elif loss_name == "weighted_bce":
-        loss_fn = WeightedBCELoss(w_pos=c_scale * R, w_neg=1.0)
-    elif loss_name == "squared_hinge":
-        loss_fn = SquaredHingeLoss()
-    elif loss_name == "focal":
-        loss_fn = FocalLoss(gamma=gamma, alpha=alpha)
-    else:
-        raise ValueError(f"Unknown loss: {loss_name}")
+    # Rebuild every component from the shared runner builders so the
+    # re-evaluation matches the original run's settings.
+    loss_fn = build_loss(
+        {"loss": loss_name}, R=R,
+        gamma=gamma, alpha=alpha, c_scale=c_scale,
+    )
+    regularizer = build_regularizer(reg_type, lambda_reg)
 
-    # Build regularizer
-    regularizer = None
-    if reg_type == "l2":
-        regularizer = L2Regularizer(lambda_reg)
-    elif reg_type == "l1":
-        regularizer = L1Regularizer(lambda_reg)
+    bt_cfg = tcfg.get("backtracking", DEFAULT_BT_CFG)
+    step_size = build_step_size(
+        step_type, c=c_val, L=L, decay_rate=decay_rate,
+        cfg_bt=bt_cfg, opt_name=opt_name,
+    )
 
-    # Build step size
-    if step_type == "fixed":
-        L_eff = 1.0 if opt_name == "newton" else L
-        step_size = FixedLR(c=c_val, L=L_eff, decay_rate=decay_rate)
-    else:
-        bt_cfg = best_run.get("hyperparams", {}).get("backtracking", {})
-        step_size = ArmijoLineSearch(
-            alpha_init=bt_cfg.get("alpha_init", 1.0),
-            beta=bt_cfg.get("beta", 0.5),
-            c_armijo=bt_cfg.get("c_armijo", 1e-4),
-        )
+    opt_cfg = {}
+    if "newton_epsilon_damp" in tcfg:
+        opt_cfg["newton_epsilon_damp"] = tcfg["newton_epsilon_damp"]
+    if "lbfgs_m" in tcfg or "lbfgs_maxiter" in tcfg:
+        opt_cfg["lbfgs"] = {
+            "m":      tcfg.get("lbfgs_m", 10),
+            "maxiter": tcfg.get("lbfgs_maxiter", 1),
+        }
+    optimizer = build_optimizer(
+        opt_name, step_size, regularizer, reg_type, opt_cfg,
+        momentum=tcfg.get("nag_momentum"),
+    )
 
-    # Build optimizer
-    use_proximal = (reg_type == "l1")
-    if opt_name == "gd":
-        optimizer = GradientDescent(step_size, regularizer, use_proximal)
-    elif opt_name == "sgd":
-        optimizer = SGD(step_size, regularizer, use_proximal)
-    elif opt_name == "nag":
-        optimizer = NAG(step_size, momentum=0.9, regularizer=regularizer,
-                        use_proximal=use_proximal)
-    elif opt_name == "newton":
-        optimizer = Newton(step_size, epsilon_damp=1e-6)
-    elif opt_name == "lbfgs":
-        optimizer = LBFGS(step_size, m=10)
-    else:
-        raise ValueError(f"Unknown optimizer: {opt_name}")
-
-    # Train using inline training loop
     result = train_logreg(
         X_train, y_train, X_val, y_val,
         loss_fn, optimizer, regularizer,
-        n_epochs=best_run.get("epochs_run", 1000),
-        batch_size=batch_size,
-        seed=cfg_seed,
+        n_epochs=tcfg.get("n_epochs", best_run.get("epochs_run", 1000)),
+        batch_size=tcfg.get("batch_size", batch_size),
+        seed=tcfg.get("seed", cfg_seed),
         verbose_every=0,
-        tol_obj=1e-6,
-        patience_inner=5,
-        patience_outer=10,
+        tol_grad=tcfg.get("tol_grad", 1e-4),
+        patience_inner=tcfg.get("patience_inner", 5),
+        patience_outer=tcfg.get("patience_outer", 10),
         dry_run=False,
     )
 
@@ -146,6 +119,7 @@ def rebuild_and_evaluate(best_run: dict, X_train, y_train, X_val, y_val,
         "reg_type":   reg_type,
         "step_type":  step_type,
         "hyperparams": hp,
+        "training_cfg": tcfg,
         "val_metrics":  val_metrics,
         "test_metrics": test_metrics,
     }
@@ -193,7 +167,7 @@ def main():
 
     # Save JSON
     with open(args.out, "w") as f:
-        json.dump(final_results, f, indent=2)
+        json.dump(sanitize_json(final_results), f, indent=2)
     logger.info(f"Final results saved to {args.out}")
 
     # Print table

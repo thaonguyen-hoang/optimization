@@ -5,7 +5,7 @@ description: >
   Fixed: BCE, L2 (λ=0.01).
 
 max_epochs: 300
-tol_obj: 1.0e-6
+tol_grad: 1.0e-4
 patience_inner: 5
 patience_outer: 20
 seed: 42

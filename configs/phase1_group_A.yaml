@@ -4,7 +4,7 @@ description: >
   and wall-clock time? Fixed BCE, L2 (λ=0.01), fixed step size.
 
 max_epochs: 500
-tol_obj: 1.0e-6
+tol_grad: 1.0e-4
 patience_inner: 5
 patience_outer: 20
 seed: 42
@@ -59,5 +59,5 @@ runs:
     optimizer: lbfgs
     reg: l2
     lambda: 0.01
-    step: backtracking   # L-BFGS uses scipy Wolfe internally
-    lbfgs_maxiter: 1     # 1 quasi-Newton step per "epoch" for fair epoch comparison
+    step: backtracking   # L-BFGS direction with Armijo line search
+    lbfgs_maxiter: 1     # 1 quasi-Newton step per epoch for fair epoch comparison

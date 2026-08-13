@@ -4,7 +4,7 @@ description: >
   for this loss independently. No loss-specific HPs to sweep.
 
 max_epochs: 500
-tol_obj: 1.0e-6
+tol_grad: 1.0e-4
 patience_inner: 5
 patience_outer: 20
 seed: 42

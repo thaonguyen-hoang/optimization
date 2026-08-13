@@ -3,7 +3,7 @@
 loss: focal
 
 max_epochs: 1000
-tol_obj: 1.0e-6
+tol_grad: 1.0e-4
 patience_inner: 5
 patience_outer: 20
 seed: 42
@@ -24,6 +24,10 @@ regularizations:
 step_size:
   fixed:
     c_gd_nag: [0.1, 0.5, 1.0, 1.5, 1.9]
+    c_newton: [0.5, 1.0]        # c=1.0 is a pure Newton step; Newton skipped for focal anyway
+    # Focal loss is NOT 1/4-smooth (log(p+ε) terms → unbounded curvature), so
+    # the sigmoid Lipschitz bound does not hold. Keep fixed steps small.
+    c_focal: [1.0e-2, 5.0e-2, 1.0e-1]
     c_sgd: [1.0e-4, 1.0e-3, 0.01, 0.05, 0.1]
     sgd_decay_rate: [0.0, 0.001, 0.01]
   backtracking:

@@ -7,7 +7,7 @@ description: >
   This isolates the loss function as the sole changing variable.
 
 max_epochs: 500
-tol_obj: 1.0e-6
+tol_grad: 1.0e-4
 patience_inner: 5
 patience_outer: 20
 seed: 42
@@ -77,7 +77,7 @@ runs:
     reg: l2
     lambda: 0.01
     step: fixed
-    c: 1.0
+    c: 0.1          # focal is not 1/4-smooth → keep fixed step small
     gamma: 0.5
     alpha: 0.75     # Heavy static balance, light focusing
 
@@ -87,7 +87,7 @@ runs:
     reg: l2
     lambda: 0.01
     step: fixed
-    c: 1.0
+    c: 0.1          # focal is not 1/4-smooth → keep fixed step small
     gamma: 2.0
     alpha: 0.50     # Lin et al. (2017) default
 
@@ -97,6 +97,6 @@ runs:
     reg: l2
     lambda: 0.01
     step: fixed
-    c: 1.0
+    c: 0.1          # focal is not 1/4-smooth → keep fixed step small
     gamma: 5.0
     alpha: 0.25     # High focusing, minimal static balance

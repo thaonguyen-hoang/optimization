@@ -4,9 +4,9 @@ loss: bce
 
 # ── Training ────────────────────────────────────────────────────────────────
 max_epochs: 1000
-tol_obj: 1.0e-6
-patience_inner: 5    # consecutive tol_obj steps to trigger Level-1 early stop
-patience_outer: 20   # val AUROC no-improvement epochs to trigger Level-2 stop
+tol_grad: 1.0e-4   # Level-1: ||grad||_2 <= tol_grad * ||grad_0||_2 (stationarity)
+patience_inner: 5  # consecutive stationary epochs to trigger Level-1 early stop
+patience_outer: 20 # val AUROC no-improvement epochs to trigger Level-2 stop
 seed: 42
 
 # ── Optimizers to sweep ──────────────────────────────────────────────────────
@@ -28,6 +28,9 @@ step_size:
   fixed:
     # c values for GD and NAG:  η = c / L
     c_gd_nag: [0.1, 0.5, 1.0, 1.5, 1.9]
+    # c values for Newton fixed: c=1.0 is a pure Newton step; GD's full grid
+    # (up to 1.9) makes raw Newton diverge, so keep the damped range only.
+    c_newton: [0.5, 1.0]
     # c values for SGD:  η = c / L  (smaller to account for stochastic noise)
     c_sgd: [1.0e-4, 1.0e-3, 0.01, 0.05, 0.1]
     # SGD learning rate decay: η_t = η_0 / (1 + decay * t)
