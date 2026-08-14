@@ -31,8 +31,7 @@ def fit_and_spectrum(data: dict, lam: float, epochs: int, seed: int) -> np.ndarr
         loss, optimizer, reg,
         n_epochs=epochs,
         seed=seed,
-        patience_inner=5,
-        patience_outer=0,   # disable outer patience for full convergence
+        tol=0.0,   # disable early stopping; run for the full budget
     )
 
     w = result["w"]

@@ -1,4 +1,7 @@
-loss: weighted_bce
+# Part A.1 — optimization-focus sweep: BCE loss.
+# Train every meaningful (optimizer x regularization x step-strategy x lam x c)
+# combination until convergence; then select the best per (loss, reg) on val.
+loss: bce
 seed: 42
 max_epochs: 500
 tol: 1.0e-4

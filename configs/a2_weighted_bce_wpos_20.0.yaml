@@ -1,0 +1,29 @@
+# Part A.2 — tune w_pos/w_neg on val using x* (best combo from Part A.1).
+# TEMPLATE: after Part A.1 completes, fill in x* (best optimizer + step
+# strategy + lam + c for weighted_bce selected on val) in the fields below.
+# Both of the optimizer's valid step strategies run (2 runs) so that the
+# fixed-vs-backtracking comparison is preserved, as in Part A.1.
+#
+# TODO: replace the placeholders below with x*:
+#   optimizers:      [<x*.optimizer>]          (e.g. nag)
+#   regularizations: [<x*.regularization>]     (e.g. l2)
+#   lambda:          [<x*.lam>]                (ignored if regularization=none)
+#   c:               [<x*.c>]                  (ignored if optimizer=newton)
+#   batch_sizes:     [<x*.batch_size>]         (only used if optimizer=sgd)
+loss: weighted_bce
+seed: 42
+max_epochs: 500
+tol: 1.0e-4
+atol: 1.0e-8
+tol_stat: 1.0e-2
+atol_stat: 1.0e-4
+patience: 3
+w_pos: 20.0
+w_neg: 1.0
+optimizers: [gd]
+regularizations: [l2]
+lambda: [1.0e-2]
+c: [1.0]
+batch_sizes: [256]
+backtracking: {initial_lr: 1.0, beta: 0.5, alpha: 1.0e-4}
+newton: {epsilon_damp: 1.0e-8}

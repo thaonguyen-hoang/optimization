@@ -19,16 +19,35 @@ def train_logreg(
     seed=42,
     verbose_every=0,
     tol=1e-4,
-    patience_inner=5,
-    patience_outer=20,
+    atol=1e-8,
+    tol_stat=1e-2,
+    atol_stat=1e-4,
+    patience=3,
 ):
     """
     Train a logistic-regression model.
 
+    Stopping has two layers, both on the optimization problem itself:
+
+    1. Trigger (relative smoothed-loss change): EMA of the full objective
+       F(w, b) with alpha = 0.1; the loss "stopped changing" when
+       |delta| < tol * |smoothed| + atol for `patience` consecutive epochs.
+    2. Acceptance (stationarity check): when the trigger fires, verify the
+       first-order stationarity condition at the current iterate —
+       ‖∇F(w,b)‖ <= max(tol_stat * ‖∇F(w0,b0)‖, atol_stat) for smooth
+       objectives, or the proximal residual for L1. If the trigger fires but
+       stationarity is NOT yet met, the run is given grace and continues
+       until `max_epochs` (a stalled run is never silently reported as
+       converged). For mini-batch SGD, the full-batch gradient is evaluated
+       at each acceptance check.
+
+    Validation is only used to track the best model for reporting; it never
+    stops the run.
+
     Parameters
     ----------
     X_train, y_train : training features and labels
-    X_val, y_val     : validation features and labels (used for early stopping)
+    X_val, y_val     : validation features and labels (used for best-model tracking)
     loss_fn          : Loss instance (BCELoss, WeightedBCELoss, SquaredHingeLoss)
     optimizer        : Optimizer instance (GD, NAG, Newton, SGD)
     regularizer      : Regularizer instance (NoReg, L2Reg, L1Reg)
@@ -36,14 +55,16 @@ def train_logreg(
     batch_size       : mini-batch size (used only by SGD; others use full batch)
     seed             : RNG seed for mini-batch shuffling
     verbose_every    : print progress every N epochs (0 = silent)
-    tol              : relative tolerance for the stationarity stopping criterion
-    patience_inner   : epochs at stationarity before stopping (Level-1)
-    patience_outer   : epochs without val AUPRC improvement before stopping (Level-2)
+    tol              : relative tolerance for the smoothed-loss trigger
+    atol             : absolute floor for the smoothed-loss trigger
+    tol_stat         : relative stationarity acceptance threshold
+    atol_stat        : absolute floor for stationarity acceptance
+    patience         : consecutive epochs satisfying the trigger before checking
 
     Returns
     -------
-    dict with keys: w, b, history, epochs_run, stop_reason,
-                    best_epoch, best_val_auprc, final_grad_norm
+    dict with keys: w, b, history, epochs_run, stop_reason, converged,
+                    best_epoch, best_val_auprc, final_grad_norm, final_objective
     """
     X_train = np.asarray(X_train, dtype=float)
     y_train = np.asarray(y_train, dtype=float)
@@ -72,6 +93,16 @@ def train_logreg(
             return float(optimizer.last_lr)
         return float(getattr(optimizer, "lr", getattr(optimizer, "initial_lr", 1.0)))
 
+    # ── First-order stationarity measure (smooth: grad norm; L1: prox residual)
+    def compute_stationarity(ww, bb):
+        if regularizer.is_smooth:
+            sw = grad_w(ww, bb) + regularizer.grad(ww)
+            sb = grad_b(ww, bb)
+            return float(np.sqrt(np.dot(sw, sw) + sb * sb))
+        step  = max(current_step_size(), np.finfo(float).eps)
+        mapping = (ww - regularizer.prox(ww - step * grad_w(ww, bb), step * regularizer.lam)) / step
+        return float(np.linalg.norm(mapping))
+
     # ── Closures for loss / gradient / Hessian on the full training set ───────
     def f_val(ww, bb):
         return float(loss_fn.value(X_train @ ww + bb, y_train))
@@ -94,38 +125,21 @@ def train_logreg(
         g = np.r_[grad_w(ww, bb) + regularizer.grad(ww), grad_b(ww, bb)]
         return H, g
 
-    # ── Compute norm0 for the relative stationarity threshold ─────────────────
-    base_gw, base_gb = grad_w(w, b), grad_b(w, b)
-    if regularizer.is_smooth:
-        base_gw += regularizer.grad(w)
-        norm0 = float(np.sqrt(np.dot(base_gw, base_gw) + base_gb * base_gb))
-    else:
-        # For L1, stationarity = proximal residual ‖w - prox(w - t·∇f)‖ / t.
-        # For fixed step, use lr (= c/L). For backtracking, use initial_lr.
-        if not getattr(optimizer, "backtracking", False):
-            initial_step = float(getattr(optimizer, "lr", 1.0))
-        else:
-            initial_step = float(getattr(optimizer, "initial_lr", 1.0))
-        initial_step = max(initial_step, np.finfo(float).eps)
-        initial_mapping = (
-            w - regularizer.prox(w - initial_step * base_gw, initial_step * regularizer.lam)
-        ) / initial_step
-        norm0 = float(np.linalg.norm(initial_mapping))
-    norm0 = max(norm0, np.finfo(float).eps)
+    # ── Reference stationarity at the initial point w0 = 0, b0 = 0 ────────────
+    norm0 = max(compute_stationarity(w, b), np.finfo(float).eps)
 
     # ── History and state initialisation ─────────────────────────────────────
     hist = {key: [] for key in (
         "train_loss", "val_loss", "val_auprc", "val_auroc",
         "val_f1_minority", "grad_norm", "wall_time", "iter",
     )}
-    best_score  = -np.inf
-    best_w      = w.copy()
-    best_b      = b
-    best_epoch  = -1
-    outer_wait  = 0
-    inner_wait  = 0
-    global_iter = 0
-    previous_loss = F_val(w, b)
+    best_score    = -np.inf
+    best_w        = w.copy()
+    best_b        = b
+    best_epoch    = -1
+    global_iter   = 0
+    smoothed_loss = None
+    wait_count    = 0
     stop_reason   = "max_epochs"
     started       = time.perf_counter()
 
@@ -172,17 +186,8 @@ def train_logreg(
         val_metrics = compute_metrics(y_val, val_proba)
 
         if full_batch:
-            if regularizer.is_smooth:
-                sw  = grad_w(w, b) + regularizer.grad(w)
-                sb  = grad_b(w, b)
-                stationarity = float(np.sqrt(np.dot(sw, sw) + sb * sb))
-            else:
-                step  = max(current_step_size(), np.finfo(float).eps)
-                mapping = (
-                    w - regularizer.prox(w - step * grad_w(w, b), step * regularizer.lam)
-                ) / step
-                stationarity = float(np.linalg.norm(mapping))
-            grad_norm = stationarity
+            stationarity = compute_stationarity(w, b)
+            grad_norm    = stationarity
         else:
             stationarity = float("nan")
             grad_norm    = float("nan")
@@ -196,32 +201,44 @@ def train_logreg(
         hist["wall_time"].append(time.perf_counter() - started)
         hist["iter"].append(global_iter)
 
-        # ── Level-2: model selection + outer patience ─────────────────────────
+        # ── Best-model tracking (reporting only, never stops early) ────────────
         score = val_metrics["auprc"]
         if np.isfinite(score) and score > best_score + 1e-12:
             best_score = score
             best_w     = w.copy()
             best_b     = float(b)
             best_epoch = epoch
-            outer_wait = 0
-        else:
-            outer_wait += 1
-
-        # ── Level-1: optimization stationarity (smooth: grad norm; L1: prox residual)
-        nonincreasing = train_loss <= previous_loss + 1e-12
-        at_stationarity = full_batch and stationarity <= tol * norm0 and nonincreasing
-        inner_wait = inner_wait + 1 if at_stationarity else 0
-        previous_loss = train_loss
 
         if verbose_every and (epoch % verbose_every == 0 or epoch == n_epochs - 1):
             print(f"epoch={epoch:4d}  train_loss={train_loss:.6g}  val_auprc={score:.6g}")
 
-        if patience_inner > 0 and inner_wait >= patience_inner:
-            stop_reason = "stationarity"
-            break
-        if patience_outer > 0 and outer_wait >= patience_outer:
-            stop_reason = "val_auprc_patience"
-            break
+        # ── Trigger: relative EMA smoothed-loss change ─────────────────────────
+        if tol > 0.0:
+            if smoothed_loss is None:
+                smoothed_loss = train_loss
+            else:
+                prev_smoothed = smoothed_loss
+                smoothed_loss = 0.9 * smoothed_loss + 0.1 * train_loss
+                delta = abs(prev_smoothed - smoothed_loss)
+                if delta < tol * abs(smoothed_loss) + atol:
+                    wait_count += 1
+                    # ── Acceptance: verify stationarity before declaring converged
+                    if wait_count >= patience:
+                        stat = compute_stationarity(w, b)
+                        if stat <= max(tol_stat * norm0, atol_stat):
+                            stop_reason = "converged"
+                            break
+                        # Grace: loss stalled but gradient still large → keep going
+                        # until max_epochs, then the final check decides the tag.
+                        wait_count = 0
+                else:
+                    wait_count = 0
+
+    # ── Final verdict at the stopping iterate ─────────────────────────────────
+    final_stat = compute_stationarity(w, b)
+    converged  = final_stat <= max(tol_stat * norm0, atol_stat)
+    if stop_reason == "max_epochs" and converged:
+        stop_reason = "converged"
 
     # ── Fallback: if no improving epoch was logged, use the last one ──────────
     if best_epoch < 0:
@@ -236,7 +253,9 @@ def train_logreg(
         "history":         hist,
         "epochs_run":      len(hist["train_loss"]),
         "stop_reason":     stop_reason,
+        "converged":       bool(converged),
         "best_epoch":      int(best_epoch),
         "best_val_auprc":  float(best_score),
-        "final_grad_norm": float(hist["grad_norm"][-1]),
+        "final_grad_norm": final_stat,
+        "final_objective": float(F_val(w, b)),
     }

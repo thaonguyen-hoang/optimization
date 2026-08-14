@@ -10,10 +10,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from runner import execute_run            # noqa: E402
-from src.data_utils import load_processed  # noqa: E402
-from src.step_sizes import lipschitz_constant  # noqa: E402
-from src.utils import sanitize_json      # noqa: E402
+from runner import execute_run
+from src.data_utils import load_processed
+from src.step_sizes import lipschitz_constant
+from src.utils import sanitize_json
 
 
 def main():

@@ -1,3 +1,7 @@
+# Part A.1 — optimization-focus sweep: Weighted BCE loss.
+# w_pos/w_neg not set here -> runner uses the class-ratio default
+# (w_pos = n_neg/n_pos ~ 5.15, w_neg = 1.0); tuning of w_pos/w_neg happens
+# separately in Part A.2.
 loss: weighted_bce
 seed: 42
 max_epochs: 500

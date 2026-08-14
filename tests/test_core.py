@@ -5,7 +5,7 @@ from src.losses import BCELoss, SquaredHingeLoss, WeightedBCELoss, build_loss
 from src.metrics import auprc, auroc
 from src.optimizers import build_optimizer
 from src.regularizers import L1Reg, build_regularizer
-from src.step_sizes import FixedLR, lipschitz_constant
+from src.step_sizes import lipschitz_constant
 from train import train_logreg
 
 
@@ -41,11 +41,11 @@ def test_training_smoke(optimizer, reg, step):
     rng = np.random.RandomState(3); X = rng.randn(80, 4); y = (X[:, 0] - .4 * X[:, 1] > 0).astype(float)
     regularizer = build_regularizer(reg, 1e-2)
     L = lipschitz_constant(X, reg=regularizer, lam=regularizer.lam)
-    lr = FixedLR(.5, L)
+    lr = 0.5 / L
     opt = build_optimizer(optimizer, lr=lr, backtracking=step == "backtracking",
                           schedule="diminishing" if step == "diminishing" else "fixed")
     result = train_logreg(X[:60], y[:60], X[60:], y[60:], build_loss("bce"), opt, regularizer,
-                          n_epochs=12, batch_size=8, patience_inner=0, patience_outer=0)
+                          n_epochs=12, batch_size=8, tol=0.0)
     assert result["epochs_run"] == 12
     assert np.isfinite(result["history"]["train_loss"]).all()
 

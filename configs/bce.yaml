@@ -2,8 +2,10 @@ loss: bce
 seed: 42
 max_epochs: 500
 tol: 1.0e-4
-patience_inner: 5
-patience_outer: 20
+atol: 1.0e-8
+tol_stat: 1.0e-2
+atol_stat: 1.0e-4
+patience: 3
 optimizers: [gd, sgd, nag, newton]
 regularizations: [none, l2, l1]
 lambda: [1.0e-4, 1.0e-3, 1.0e-2, 1.0e-1]

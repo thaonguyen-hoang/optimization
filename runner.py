@@ -125,8 +125,10 @@ def execute_run(spec: dict, cfg: dict, data: dict) -> dict:
         seed=cfg.get("seed", 42),
         verbose_every=cfg.get("verbose_every", 0),
         tol=cfg.get("tol", 1e-4),
-        patience_inner=cfg.get("patience_inner", 5),
-        patience_outer=cfg.get("patience_outer", 20),
+        atol=cfg.get("atol", 1e-8),
+        tol_stat=cfg.get("tol_stat", 1e-2),
+        atol_stat=cfg.get("atol_stat", 1e-4),
+        patience=cfg.get("patience", 3),
     )
 
     w = result["w"]
@@ -154,9 +156,11 @@ def execute_run(spec: dict, cfg: dict, data: dict) -> dict:
         "final_metrics":    final_metrics,
         "epochs_run":       result["epochs_run"],
         "stop_reason":      result["stop_reason"],
+        "converged":        result["converged"],
         "best_epoch":       result["best_epoch"],
         "best_val_auprc":   result["best_val_auprc"],
         "final_grad_norm":  result["final_grad_norm"],
+        "final_objective":  result["final_objective"],
         "total_wall_time":  result["history"]["wall_time"][-1],
     }
 
@@ -175,6 +179,7 @@ def _build_summary_row(artifact: dict, path: Path) -> dict:
         "best_epoch":       artifact["best_epoch"],
         "epochs_run":       artifact["epochs_run"],
         "stop_reason":      artifact["stop_reason"],
+        "converged":        artifact["converged"],
         "total_wall_time":  artifact["total_wall_time"],
     }
 
